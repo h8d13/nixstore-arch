@@ -1,0 +1,84 @@
+#!/usr/bin/ash
+# Early-userspace mount handler: instead of a block device, root is a
+# generation from a nixstore, overlay-mounted with a tmpfs upper. This is
+# enter.sh's sandbox running as real root.
+#
+# Store source, per generation: a writable store disk (label NIXSTORE,
+# any ext4 volume; nixgen-commit populates it from inside the box) if it
+# holds the requested generation, else read-only nixstore.squashfs from
+# the boot medium (label NIXISO).
+#
+# Kernel cmdline: nixgen=<store path basename>
+#                 [nixlabel=<iso label>] [nixstorelabel=<disk label>]
+run_hook() {
+	mount_handler="nixgen_mount_handler"
+}
+
+# mount the first candidate device that actually carries the store;
+# checking for the squashfs beats trusting device names
+nixgen_mount_iso() {
+	for d in "/dev/disk/by-label/$label" /dev/sr0 /dev/sr1 \
+			/dev/vda /dev/vdb /dev/sda /dev/sdb; do
+		[ -b "$d" ] || continue
+		mount -r -t iso9660 "$d" /run/nixiso || continue
+		[ -f /run/nixiso/nixstore.squashfs ] && return 0
+		umount /run/nixiso
+	done
+	return 1
+}
+
+nixgen_mount_handler() {
+	newroot="$1"
+	label="${nixlabel:-NIXISO}"
+	mkdir -p /run/nixiso /run/nixstore /run/nixstoredev /run/cow
+
+	storedev="/dev/disk/by-label/${nixstorelabel:-NIXSTORE}"
+	poll_device "$storedev" 5
+	if [ -b "$storedev" ] && mount "$storedev" /run/nixstoredev; then
+		msg ":: nixgen: writable store on $storedev"
+	fi
+
+	if [ -d "/run/nixstoredev/nix/store/$nixgen" ]; then
+		mount -o bind /run/nixstoredev/nix/store /run/nixstore
+	else
+		msg ":: nixgen: waiting for device labeled $label"
+		poll_device "/dev/disk/by-label/$label" 10
+		tries=0
+		while ! nixgen_mount_iso; do
+			tries=$((tries + 1))
+			if [ "$tries" -gt 20 ]; then
+				err "nixgen: no device carries nixstore.squashfs"
+				launch_interactive_shell
+			fi
+			sleep 1
+		done
+		if ! mount -r -t squashfs -o loop \
+				/run/nixiso/nixstore.squashfs /run/nixstore; then
+			loopdev=$(losetup -f)
+			losetup -r "$loopdev" /run/nixiso/nixstore.squashfs
+			mount -r -t squashfs "$loopdev" /run/nixstore
+		fi
+	fi
+
+	lower="/run/nixstore/$nixgen"
+	if [ ! -d "$lower" ]; then
+		err "nixgen: generation '$nixgen' not in store"
+		ls /run/nixstore
+		launch_interactive_shell
+	fi
+
+	mount -t tmpfs -o size=75%,mode=0755 cow /run/cow
+	mkdir -p /run/cow/upper /run/cow/work
+	mount -t overlay overlay \
+		-o "lowerdir=$lower,upperdir=/run/cow/upper,workdir=/run/cow/work" \
+		"$newroot"
+
+	# store visible in the booted system; with a store disk (even a blank
+	# one) its root lands at /nixstoredev for nixgen-commit
+	mkdir -p "$newroot/nixstore"
+	mount -o bind /run/nixstore "$newroot/nixstore"
+	if grep -q " /run/nixstoredev " /proc/mounts; then
+		mkdir -p "$newroot/nixstoredev"
+		mount -o bind /run/nixstoredev "$newroot/nixstoredev"
+	fi
+}

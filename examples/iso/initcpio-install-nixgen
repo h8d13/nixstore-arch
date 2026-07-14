@@ -1,0 +1,29 @@
+#!/bin/bash
+build() {
+	add_module loop
+	add_module overlay
+	add_module squashfs
+	add_module iso9660
+	add_module sr_mod
+	add_module cdrom
+	# mkinitcpio's udev hook ships persistent-storage rules but not
+	# cdrom_id; without it udev never probes CD media, so
+	# /dev/disk/by-label/* never appears for optical/ISO devices
+	add_binary /usr/lib/udev/cdrom_id
+	add_file /usr/lib/udev/rules.d/60-cdrom_id.rules
+	add_runscript
+}
+
+help() {
+	cat <<HELPEOF
+Boots a nixstore generation as the root filesystem: waits for the boot
+medium by label, mounts the squashed store from it, overlay-mounts the
+generation named by nixgen= with a tmpfs upper layer, then hands the
+merged tree to switch_root. Writes go to RAM and vanish on shutdown;
+the store path itself is immutable.
+
+Kernel cmdline:
+  nixgen=<store path basename>   which generation to boot (required)
+  nixlabel=<iso volume label>    boot medium label (default NIXISO)
+HELPEOF
+}

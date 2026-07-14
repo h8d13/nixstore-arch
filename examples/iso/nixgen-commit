@@ -1,0 +1,38 @@
+#!/bin/sh -e
+# Commit the running system as a new generation, from inside the box.
+# Needs a NIXSTORE disk attached (/nixstoredev mounted by the nixgen
+# initramfs hook); a blank one gets a store initialized on first commit.
+# Snapshots the merged root via a non-recursive bind (submounts like
+# /proc, /run, /nixstore fall away), imports it content-addressed,
+# appends a GRUB entry on the store disk.
+# usage: nixgen-commit <name>
+NAME=$1
+[ -n "$NAME" ] || { echo "usage: $0 <name>" >&2; exit 1; }
+[ -d /nixstoredev ] || {
+	echo "no writable store: boot with a NIXSTORE disk attached" >&2
+	exit 1
+}
+
+SNAP=/run/nixgen-snap
+mkdir -p "$SNAP"
+mount --bind / "$SNAP"
+trap 'umount "$SNAP"' EXIT
+
+# NAR can't represent sockets/fifos; these are runtime droppings (gpg
+# agent et al) so deleting them from the live root is fine
+find "$SNAP" \( -type s -o -type p \) -print -delete
+
+LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/import-dir \
+	/nixstoredev "$NAME" "$SNAP"
+
+NEW=$(ls -td /nixstoredev/nix/store/*-"$NAME" | head -1)
+GEN=$(basename "$NEW")
+
+cat >> /nixstoredev/entries.cfg <<EOF
+menuentry "nixarch: $GEN (committed)" {
+	search --no-floppy --set=nixdev --label NIXSTORE
+	linux (\$nixdev)/nix/store/$GEN/boot/vmlinuz-linux nixgen=$GEN console=ttyS0,115200 console=tty0
+	initrd (\$nixdev)/nix/store/$GEN/boot/initramfs-linux.img
+}
+EOF
+echo "committed: $GEN (GRUB entry added, visible next boot)"

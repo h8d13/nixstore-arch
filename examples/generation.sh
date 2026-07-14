@@ -44,6 +44,13 @@ chroot "$TMP/mnt" /usr/bin/env -i \
 umount -l "$TMP/mnt/dev"
 umount "$TMP/mnt/proc"
 
+# the host resolv.conf copied in above was build scaffolding; the
+# generation inherits whatever its base had (file, symlink, or nothing)
+rm -f "$TMP/mnt/etc/resolv.conf"
+if [ -e "$BASE/etc/resolv.conf" ] || [ -L "$BASE/etc/resolv.conf" ]; then
+	cp -P "$BASE/etc/resolv.conf" "$TMP/mnt/etc/resolv.conf"
+fi
+
 # scrub what a generation must not capture: scratch dirs, and
 # sockets/fifos (NAR cannot represent them)
 rm -rf "$TMP/mnt/tmp"/* "$TMP/mnt/tmp"/.[!.]* "$TMP/mnt/run"/* 2>/dev/null || true
