@@ -9,6 +9,14 @@ Depends:
 `boost`, `openssl`, `libsodium`, `libarchive`, `brotli`,
 `zstd`, `blake3`, `nlohmann-json`, `sqlite`, `curl`, `libseccomp`
 
+Arch package names (`boost` is headers only; the compiled
+`context`/`coroutine`/`iostreams`/`url` libs live in `boost-libs`):
+
+```
+pacman -S --needed meson ninja gcc pkgconf boost boost-libs openssl libsodium \
+	libarchive brotli zstd libblake3 nlohmann-json sqlite curl libseccomp
+```
+
 API reference:
 
 C++ headers install to `include/nix/{util,store}/` ([internal API docs](https://hydra.nixos.org/job/nix/master/internal-api-docs/latest/download-by-type/doc/internal-api-docs))

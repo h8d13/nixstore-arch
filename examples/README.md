@@ -46,6 +46,10 @@ the C++ tools then compile on demand). Host needs `g++`, `curl`, `grub` +
 root, no squashfs-tools (mksquashfs runs from inside the generation).
 
 ```
+pacman -S --needed grub xorriso mtools e2fsprogs qemu-base
+```
+
+```
   examples/bootstrap.sh build/archstore          # fresh base (once)
   examples/iso/mkiso.sh build/archstore <base>   # ISO (<base> = path bootstrap printed)
   examples/iso/mkstoredisk.sh                    # blank persistence disk
