@@ -22,6 +22,7 @@ trap 'umount "$SNAP"' EXIT
 # agent et al) so deleting them from the live root is fine
 find "$SNAP" \( -type s -o -type p \) -print -delete
 
+/usr/local/bin/nixgen-savemeta "$SNAP"
 LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/import-dir \
 	/nixstoredev "$NAME" "$SNAP"
 

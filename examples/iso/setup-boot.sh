@@ -45,19 +45,62 @@ EOF
 # staged by mkiso.sh) and the commit wrapper
 install -d /usr/local/bin /usr/local/lib
 install -m755 "$I/payload/import-dir" /usr/local/bin/import-dir
+install -m755 "$I/payload/rm-path" /usr/local/bin/rm-path
 cp -P "$I"/payload/libnix*.so* /usr/local/lib/
 install -m755 "$I/nixgen-commit" /usr/local/bin/nixgen-commit
+install -m755 "$I/nixgen-remove" /usr/local/bin/nixgen-remove
+install -m755 "$I/nixgen-update" /usr/local/bin/nixgen-update
+install -m755 "$I/nixgen-savemeta" /usr/local/bin/nixgen-savemeta
+install -m755 "$I/nixgen-restmeta" /usr/local/bin/nixgen-restmeta
+
+# store import canonicalises permissions (dirs 0555, no setuid/sticky/
+# ownership/caps); replay the captured manifest before anything else
+# runs. See nixgen-savemeta/-restmeta
+cat > /etc/systemd/system/nixgen-perms.service <<EOF
+[Unit]
+Description=Restore store-canonicalised permissions
+DefaultDependencies=no
+After=systemd-remount-fs.service
+Before=sysinit.target systemd-tmpfiles-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nixgen-restmeta
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
+EOF
+systemctl enable nixgen-perms
 
 cat > /root/.bash_profile <<'EOF'
 echo "=== NIXARCH BOOT OK ==="
 grep -o 'nixgen=[^ ]*' /proc/cmdline
 EOF
 
-# kernel install triggers mkinitcpio -P via ALPM hook, which picks up
-# /etc/mkinitcpio.conf above and bakes the nixgen hook into the image.
-# trailing libs = runtime deps of import-dir/libnixstore
-pacman -Sy --noconfirm --needed linux mkinitcpio squashfs-tools \
+# tools + runtime deps of import-dir/libnixstore first, so the ALPM
+# mkinitcpio hook exists before the kernel lands
+pacman -Sy --noconfirm --needed mkinitcpio squashfs-tools \
 	libblake3 boost-libs libsodium onetbb sqlite icu libxml2 libseccomp brotli
+
+# kernel pinned ~30 days back, so nixgen-update against live repos
+# performs a real version-to-version kernel upgrade (exercised by
+# iso/update-test.sh). The Arch Linux Archive mirrors the live repo
+# layout, so pin = swap the mirrorlist for this one transaction (a
+# custom [section] would 404: pacman fetches <section>.db, ALA only
+# serves core.db). Install triggers mkinitcpio -P via ALPM hook, which
+# picks up /etc/mkinitcpio.conf above and bakes the nixgen hook in
+PIN=$(date -d '-30 days' +%Y/%m/%d)
+mv /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist.live
+echo "Server = https://archive.archlinux.org/repos/$PIN/\$repo/os/\$arch" \
+	> /etc/pacman.d/mirrorlist
+# -Syy: the archive db is *older* than the cached live one; plain -Sy
+# gets a 304 and silently resolves against the live db (ALA's rewrite
+# then serves any package file, masking the broken pin)
+pacman -Syy --noconfirm linux
+# back to live mirrors: shipped generations must update from them
+mv /etc/pacman.d/mirrorlist.live /etc/pacman.d/mirrorlist
+pacman -Syy
 
 # resolved-managed DNS. Last on purpose: pacman above still needed the
 # host resolv.conf that the sandbox copies in

@@ -55,6 +55,7 @@ umount "$TMP/root/proc"
 rm -rf "$TMP/root/tmp"/* "$TMP/root/tmp"/.[!.]* "$TMP/root/run"/* 2>/dev/null || true
 find "$TMP/root" \( -type s -o -type p \) -delete
 
+"$REPO/examples/iso/nixgen-savemeta" "$TMP/root"
 LD_LIBRARY_PATH=$REPO/build/prefix/lib "$REPO/build/import-dir" \
 	"$STORE" arch-base "$TMP/root"
 EOF

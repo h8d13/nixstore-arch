@@ -48,10 +48,13 @@ GEN2=$(ls -td "$SDIR"/*-nixarch-2 | head -1)
 [ -n "$GEN1" ] || {
 	cp -r "$REPO/examples/iso" "$TMP/inject"
 	mkdir "$TMP/inject/payload"
-	cp "$REPO/build/import-dir" "$P/lib"/libnixstore.so* \
+	cp "$REPO/build/import-dir" "$REPO/build/rm-path" \
+		"$P/lib"/libnixstore.so* \
 		"$P/lib"/libnixutil.so* "$TMP/inject/payload/"
+	# sh -e: run via interpreter ignores the shebang's -e; without it a
+	# failed setup step imports a broken generation instead of aborting
 	INJECT=$TMP/inject examples/generation.sh "$STORE" "$BASE" nixarch-1 \
-		"sh /run/inject/setup-boot.sh"
+		"sh -e /run/inject/setup-boot.sh"
 	GEN1=$(ls -td "$SDIR"/*-nixarch-1 | head -1)
 }
 echo "gen1: $GEN1"
@@ -96,18 +99,14 @@ menuentry "nixarch: $G1 (rollback)" {
 	initrd /boot/initramfs-linux.img
 }
 
-# generations committed from inside the box (nixgen-commit) live on the
-# NIXSTORE disk. The search runs when the submenu is entered, not at
-# menu-build time: BIOS grub probing for an absent label costs ~10s,
-# which every boot would pay
-submenu "committed generations (NIXSTORE disk) ->" {
-	search --no-floppy --set=nixdev --label NIXSTORE
-	if [ -n "\$nixdev" ]; then
-		source (\$nixdev)/entries.cfg
-	else
-		menuentry "no NIXSTORE device found" { true }
-	fi
-}
+# generations committed from inside the box (nixgen-commit/-update) live
+# on the NIXSTORE disk; pull their entries into the top-level menu when
+# it's attached. Known cost: BIOS grub probing for an absent label takes
+# ~10s, paid on every diskless boot
+search --no-floppy --set=nixdev --label NIXSTORE
+if [ -n "\$nixdev" ]; then
+	source (\$nixdev)/entries.cfg
+fi
 EOF
 
 grub-mkrescue -o "$REPO/build/nixarch.iso" "$ISO" -volid "$LABEL"

@@ -34,6 +34,11 @@ cat > "$TMP/inner.sh" <<EOF
 set -e
 mount -t overlay overlay \
 	-o "lowerdir=$BASE,upperdir=$TMP/upper,workdir=$TMP/work" "$TMP/mnt"
+# give the merged view the modes the base captured before import
+# (store lower is canonical 0555); see nixgen-savemeta
+if [ -f "$BASE/etc/nixgen/perms" ]; then
+	"$REPO/examples/iso/nixgen-restmeta" "$TMP/mnt"
+fi
 mount --rbind /dev "$TMP/mnt/dev"
 mount -t proc proc "$TMP/mnt/proc"
 rm -f "$TMP/mnt/etc/resolv.conf"
@@ -65,6 +70,7 @@ fi
 rm -rf "$TMP/mnt/tmp"/* "$TMP/mnt/tmp"/.[!.]* "$TMP/mnt/run"/* 2>/dev/null || true
 find "$TMP/mnt" \( -type s -o -type p \) -delete
 
+"$REPO/examples/iso/nixgen-savemeta" "$TMP/mnt"
 LD_LIBRARY_PATH=$P/lib "$REPO/build/import-dir" "$STORE_ROOT" "$NAME" "$TMP/mnt"
 EOF
 

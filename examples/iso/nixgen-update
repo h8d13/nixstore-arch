@@ -1,0 +1,90 @@
+#!/bin/sh -e
+# Transactional update, from inside the box: build the *next* generation
+# offline while the running tree stays untouched. Overlay lower = the
+# booted generation (immutable in the store), upper = scratch on the
+# store disk; cmd mutates the merged view in a chroot, the result is
+# imported content-addressed + GRUB entry appended. The live root never
+# sees a whiteout, so the running kernel keeps its full module tree
+# (the pacman live-update mismatch cannot happen). Reboot to switch,
+# older entry = rollback.
+# usage: nixgen-update <name> [cmd]   (cmd default: pacman -Syu --noconfirm)
+NAME=$1
+[ -n "$NAME" ] || { echo "usage: $0 <name> [cmd]" >&2; exit 1; }
+shift
+CMD=${*:-pacman -Syu --noconfirm}
+
+GEN=$(sed -n 's/.*nixgen=\([^ ]*\).*/\1/p' /proc/cmdline)
+LOWER=/nixstore/$GEN
+[ -d "$LOWER" ] || { echo "running generation '$GEN' not in /nixstore" >&2; exit 1; }
+[ -d /nixstoredev ] || {
+	echo "no writable store: boot with a NIXSTORE disk attached" >&2
+	exit 1
+}
+
+# scratch on the store disk, not tmpfs: a full -Syu upper outgrows RAM
+SCRATCH=$(mktemp -d /nixstoredev/update.XXXXXX)
+mkdir "$SCRATCH/upper" "$SCRATCH/work" "$SCRATCH/mnt"
+trap 'rm -rf "$SCRATCH"' EXIT
+
+# Inner script runs in fresh mount+pid namespaces (already real root
+# here). Mounts die with the namespace; proc/dev are unmounted before
+# import so the merged view contains only real files.
+cat > "$SCRATCH/inner.sh" <<EOF
+set -e
+mount -t overlay overlay \
+	-o "lowerdir=$LOWER,upperdir=$SCRATCH/upper,workdir=$SCRATCH/work" "$SCRATCH/mnt"
+# merged view gets the modes captured at the lower's import (store
+# lower is canonical 0555; pacman would warn on every dir otherwise)
+/usr/local/bin/nixgen-restmeta "$SCRATCH/mnt"
+mount --rbind /dev "$SCRATCH/mnt/dev"
+mount -t proc proc "$SCRATCH/mnt/proc"
+# the generation's resolv.conf points into /run (scrubbed at import);
+# give the chroot the live resolved answer, restored below
+rm -f "$SCRATCH/mnt/etc/resolv.conf"
+cp /etc/resolv.conf "$SCRATCH/mnt/etc/resolv.conf"
+
+chroot "$SCRATCH/mnt" /usr/bin/env -i \
+	HOME=/root PATH=/usr/bin:/usr/sbin TERM=\${TERM:-dumb} \
+	sh -c '$CMD'
+
+umount -l "$SCRATCH/mnt/dev"
+umount "$SCRATCH/mnt/proc"
+
+# resolv.conf: keep the lower generation's version unless cmd replaced it
+if [ ! -L "$SCRATCH/mnt/etc/resolv.conf" ] \
+		&& cmp -s /etc/resolv.conf "$SCRATCH/mnt/etc/resolv.conf"; then
+	rm -f "$SCRATCH/mnt/etc/resolv.conf"
+	if [ -e "$LOWER/etc/resolv.conf" ] || [ -L "$LOWER/etc/resolv.conf" ]; then
+		cp -P "$LOWER/etc/resolv.conf" "$SCRATCH/mnt/etc/resolv.conf"
+	fi
+fi
+
+# scrub what a generation must not capture: scratch dirs, downloaded
+# package cache, and sockets/fifos (NAR cannot represent them)
+rm -rf "$SCRATCH/mnt/tmp"/* "$SCRATCH/mnt/tmp"/.[!.]* "$SCRATCH/mnt/run"/* \
+	"$SCRATCH/mnt/var/cache/pacman/pkg"/* 2>/dev/null || true
+find "$SCRATCH/mnt" \( -type s -o -type p \) -delete
+
+/usr/local/bin/nixgen-savemeta "$SCRATCH/mnt"
+LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/import-dir \
+	/nixstoredev "$NAME" "$SCRATCH/mnt"
+EOF
+unshare -mpf --kill-child sh "$SCRATCH/inner.sh"
+
+NEW=$(ls -td /nixstoredev/nix/store/*-"$NAME" | head -1)
+NEWGEN=$(basename "$NEW")
+
+# new entry boots the new generation's own kernel+initramfs (a kernel
+# upgrade regenerates them in the overlay via the mkinitcpio ALPM hook),
+# same kernel params minus the generation selector and GRUB bookkeeping
+CMDLINE=$(tr ' ' '\n' < /proc/cmdline \
+	| grep -v '^nixgen=\|^BOOT_IMAGE=\|^initrd=\|^$' | tr '\n' ' ')
+
+cat >> /nixstoredev/entries.cfg <<EOF
+menuentry "nixarch: $NEWGEN (committed)" {
+	search --no-floppy --set=nixdev --label NIXSTORE
+	linux (\$nixdev)/nix/store/$NEWGEN/boot/vmlinuz-linux nixgen=$NEWGEN $CMDLINE
+	initrd (\$nixdev)/nix/store/$NEWGEN/boot/initramfs-linux.img
+}
+EOF
+echo "updated: $NEWGEN (GRUB entry added, reboot to switch)"

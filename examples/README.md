@@ -27,6 +27,9 @@
   ├──────────────────────────────────────┼───────────────────────────────────────────────────────────────────┤
   │ iso/boot-test.sh                     │ headless QEMU smoke-boot of build/nixarch.iso, PASS on autologin  │
   │                                      │ (attaches build/nixstore.img when present)                        │
+  ├──────────────────────────────────────┼───────────────────────────────────────────────────────────────────┤
+  │ iso/update-test.sh                   │ nixgen-update e2e: kernel upgrade in the box, then boot the result│
+  │                                      │ from the store disk alone (no ISO), PASS on marker + package      │
   └──────────────────────────────────────┴───────────────────────────────────────────────────────────────────┘
 ```
 
@@ -37,6 +40,28 @@ Store visible at `/nixstore`; with a disk attached its root is at
 `/nixstoredev` and `nixgen-commit <name>` (inside the box) imports the running
 root as a new generation there (initializing a store on a blank disk) and
 appends its GRUB entry on the disk. Rollback = pick an older GRUB entry.
+`nixgen-update <name> [cmd]` (also inside the box) goes the other way:
+builds the *next* generation offline (overlay on the booted generation,
+cmd = `pacman -Syu` by default in a chroot, import + GRUB entry) while
+the live root stays untouched, so the running kernel keeps its full
+module tree and the pacman live-update mismatch cannot happen.
+`nixgen-remove <store-path-basename>...` deletes committed generations
+from the store disk (disk + db together via the GC codepath, refusing
+the running generation and anything still referenced) and prunes their
+GRUB entries from entries.cfg.
+
+Store import canonicalises permissions (dirs 0555, files 0444/0555,
+root-owned, no xattrs: NAR keeps only the executable bit). What that
+strips is captured per generation by `nixgen-savemeta` into
+`/etc/nixgen/{perms,caps}` (directory modes, setuid/sticky bits,
+ownership, capabilities) and replayed by `nixgen-restmeta`: at boot
+via `nixgen-perms.service` (metadata-only copy-up into the tmpfs
+upper) and inside every build sandbox right after the overlay mount,
+so pacman sees the modes it expects and stays warning-free. Plain
+644-vs-444 file modes stay canonical on purpose (root bypasses them;
+restoring would copy-up every file). The ISO kernel is pinned ~30 days
+back (Arch Linux Archive) so `iso/update-test.sh` exercises a real
+version-to-version kernel upgrade.
 Uncommitted writes live in RAM and vanish. Networking is baked in:
 systemd-networkd DHCP on `en*`, DNS via systemd-resolved.
 

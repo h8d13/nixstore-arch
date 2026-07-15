@@ -1,0 +1,20 @@
+#!/bin/sh -e
+# Capture filesystem metadata that store import will canonicalise away
+# (every dir becomes 0555 root:root, files lose special bits and
+# ownership, xattr capabilities vanish: NAR keeps only the executable
+# bit) as plain data inside the tree: etc/nixgen/perms + etc/nixgen/caps.
+# Being content, the manifest is hashed and deduped with the generation
+# and rolls back with it. nixgen-restmeta replays it at boot and in
+# build sandboxes.
+# Plain-file mode diffs (644 vs canonical 444) are skipped on purpose:
+# owner is root, root bypasses modes, and restoring them would
+# metadata-copy-up every file instead of a few dozen paths.
+# usage: nixgen-savemeta <root>
+R=$1
+[ -d "$R" ] || { echo "usage: $0 <root>" >&2; exit 1; }
+cd "$R"
+mkdir -p etc/nixgen
+find . -xdev \( -type d ! \( -perm 555 -user 0 -group 0 \) \
+	-o -type f \( -perm /7022 -o ! -user 0 -o ! -group 0 \) \) \
+	-printf '%m\t%U\t%G\t%p\n' | sort -t'	' -k4 > etc/nixgen/perms
+getcap -r . > etc/nixgen/caps

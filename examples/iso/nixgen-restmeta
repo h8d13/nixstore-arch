@@ -1,0 +1,35 @@
+#!/bin/sh -e
+# Replay metadata the store canonicalisation stripped, captured by
+# nixgen-savemeta in etc/nixgen/perms + caps: directory modes, special
+# mode bits (setuid/sticky/...), non-root ownership, capability xattrs.
+# On the booted overlay each touched path is a metadata-only copy-up
+# into the tmpfs upper. Also run inside build sandboxes right after the
+# overlay mount, so pacman sees the modes it expects (no "directory
+# permissions differ" warnings against the 0555 store lower).
+# usage: nixgen-restmeta [root]   (default /; run by nixgen-perms.service)
+R=${1:-/}
+M=$R/etc/nixgen/perms
+[ -f "$M" ] || exit 0
+cd "$R"
+
+# batch chmod per distinct mode value: dirs dominate the manifest and
+# collapse to a handful of exec calls
+cut -f1 "$M" | sort -u | while read -r mode; do
+	awk -F'\t' -v m="$mode" '$1 == m { print $4 }' "$M" \
+		| tr '\n' '\0' | xargs -0 -r chmod "$mode"
+done
+
+# ownership deviations are few, applied one by one. In a single-uid
+# userns sandbox non-zero uids have no mapping and must fail soft; the
+# booted box is real root and applies them all
+awk -F'\t' '$2 != 0 || $3 != 0 { print $2 ":" $3 " " $4 }' "$M" \
+	| while read -r own p; do
+		chown "$own" "$p" || echo "restmeta: chown $own $p skipped" >&2
+	done
+
+C=$R/etc/nixgen/caps
+if [ -s "$C" ]; then
+	while read -r p caps; do
+		setcap "$caps" "$p" || echo "restmeta: setcap $p skipped" >&2
+	done < "$C"
+fi

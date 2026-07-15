@@ -1,0 +1,58 @@
+#!/bin/sh -e
+# Delete committed generations from the store disk, from inside the
+# box: disk + db together via the GC codepath (rm-path refuses paths
+# other valid paths still reference; never rm -rf inside a store), then
+# prune their GRUB entries from entries.cfg. The running generation is
+# refused; generations living only in the ISO squashfs are untouchable
+# here anyway (read-only store).
+# usage: nixgen-remove <store-path-basename>...
+[ $# -ge 1 ] || { echo "usage: $0 <store-path-basename>..." >&2; exit 1; }
+[ -d /nixstoredev ] || {
+	echo "no writable store: boot with a NIXSTORE disk attached" >&2
+	exit 1
+}
+RUNNING=$(sed -n 's/.*nixgen=\([^ ]*\).*/\1/p' /proc/cmdline)
+
+rc=0
+for GEN in "$@"; do
+	# bare names (the <name> given at import) resolve to <hash>-<name>
+	# when exactly one generation on the disk matches
+	if [ ! -d "/nixstoredev/nix/store/$GEN" ]; then
+		n=0
+		for m in /nixstoredev/nix/store/*-"$GEN"; do
+			if [ -d "$m" ]; then
+				n=$((n + 1))
+				match=${m##*/}
+			fi
+		done
+		if [ "$n" -eq 1 ]; then
+			GEN=$match
+		elif [ "$n" -gt 1 ]; then
+			echo "ambiguous name '$GEN' ($n matches), use the full basename" >&2
+			rc=1
+			continue
+		else
+			echo "not on the store disk: $GEN" >&2
+			rc=1
+			continue
+		fi
+	fi
+	if [ "$GEN" = "$RUNNING" ]; then
+		echo "refusing to remove the running generation: $GEN" >&2
+		rc=1
+		continue
+	fi
+	LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/rm-path \
+		/nixstoredev "$GEN" || { rc=1; continue; }
+	# prune the generation's menu block (menuentry line through '}')
+	if [ -f /nixstoredev/entries.cfg ]; then
+		awk -v g="$GEN" '
+			$0 ~ "^menuentry .*" g { skip = 1 }
+			!skip { print }
+			skip && /^}/ { skip = 0 }
+		' /nixstoredev/entries.cfg > /nixstoredev/entries.cfg.new
+		mv /nixstoredev/entries.cfg.new /nixstoredev/entries.cfg
+	fi
+	echo "removed: $GEN (GRUB entry pruned)"
+done
+exit $rc
