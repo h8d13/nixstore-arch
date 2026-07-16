@@ -162,6 +162,8 @@ drive "NIXARCH BOOT OK" \
 	"visible next boot" \
 	"nixgen-switch test-sw" \
 	"-test-sw (soft)" \
+	'echo "$(stat -c %a /usr)-$(stat -c %a /var/tmp)"' \
+	"755-1777" \
 	"nixgen-remove test-sw" \
 	"refusing to remove the running generation" \
 	"nixgen-listid" \

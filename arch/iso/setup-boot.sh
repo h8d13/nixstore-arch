@@ -74,6 +74,11 @@ Description=Restore store-canonicalised permissions
 DefaultDependencies=no
 After=systemd-remount-fs.service
 Before=sysinit.target systemd-tmpfiles-setup.service
+# DefaultDependencies=no skips the implicit shutdown conflict; without
+# it the unit's active state survives a soft-reboot and it never
+# re-runs in the switched root
+Conflicts=shutdown.target
+Before=shutdown.target
 
 [Service]
 Type=oneshot

@@ -75,6 +75,10 @@ mkdir "$COW/upper" "$COW/work"
 mkdir -p /run/nextroot
 mount -t overlay overlay \
 	-o "lowerdir=$LOWER,upperdir=$COW/upper,workdir=$COW/work" /run/nextroot
+# replay the target's perms manifest now: nixgen-perms.service has
+# DefaultDependencies=no, so soft-reboot's shutdown never stops it and
+# its active state deserializes into the new root as already-run
+/usr/local/bin/nixgen-restmeta /run/nextroot
 
 # same mounts the initramfs hook stages: the store holding the running
 # generation at /nixstore, store-disk root at /nixstoredev. Submounts
