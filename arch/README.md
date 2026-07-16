@@ -21,6 +21,7 @@ builds the *next* generation offline; the running root is never touched.
 | `iso/mkstoredisk.sh [img] [size]` | blank ext4 disk (label NIXSTORE); attached, it persists committed generations |
 | `iso/mkbootdisk.sh <store-root> [img] [MiB]` | standalone bootable disk image (UEFI, no ISO): GRUB ESP + seeded store partition |
 | `iso/flashdisk.sh <store-root> <device>` | one-shot flash: sizes image to the disk, builds, writes, fscks both partitions |
+| `iso/uefi-vm.sh [disk\|iso\|clean]` | interactive QEMU on the real UEFI path (OVMF pflash, persistent NVRAM): flashable disk image or ISO |
 | `iso/boot-test.sh` | headless QEMU smoke-boot of the ISO, PASS on autologin |
 | `iso/update-test.sh` | e2e: kernel upgrade in the box, boot the result from the store disk alone |
 
@@ -50,7 +51,7 @@ Inside the box (installed by setup-boot.sh):
 ## From nothing
 
 Host deps: build deps from the root README, plus
-`pacman -S --needed grub xorriso mtools e2fsprogs qemu-base`.
+`pacman -S --needed grub xorriso mtools e2fsprogs qemu-base edk2-ovmf`.
 No root needed anywhere; no squashfs-tools (mksquashfs runs from
 inside the generation).
 
