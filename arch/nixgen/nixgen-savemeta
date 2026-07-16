@@ -17,8 +17,11 @@ R=$1
 [ -d "$R" ] || { echo "usage: $0 <root>" >&2; exit 1; }
 cd "$R"
 mkdir -p etc/nixgen
+# ! -perm -444: canonical 0444 makes every file world-readable, so
+# files STRICTER than that (shadow, ssh host keys, 600/640/440) must
+# be captured or import discloses them to non-root users
 find . -xdev \( -type d ! \( -perm 555 -user 0 -group 0 \) \
-	-o -type f \( -perm /7022 -o ! -user 0 -o ! -group 0 \) \
+	-o -type f \( -perm /7022 -o ! -perm -444 -o ! -user 0 -o ! -group 0 \) \
 	-o -type l ! \( -user 0 -group 0 \) \) \
 	-printf '%y\t%m\t%U\t%G\t%p\n' | sort -t'	' -k5 > etc/nixgen/perms
 getcap -r . > etc/nixgen/caps

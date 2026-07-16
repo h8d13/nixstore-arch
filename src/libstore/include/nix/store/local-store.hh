@@ -305,6 +305,28 @@ public:
         const StorePathSet & references,
         RepairFlag repair) override;
 
+    /**
+     * Per-file NAR hashes captured while restoring an import (the
+     * bytes are hashed as they stream through the restore sink), so a
+     * following optimisePath() can dedup without re-reading and
+     * re-hashing every file. Keys are CanonPath::abs() strings
+     * relative to the restored root.
+     */
+    struct ImportFileHashes
+    {
+        std::map<std::string, Hash> files;
+    };
+
+    StorePath addToStoreFromDump(
+        Source & dump,
+        std::string_view name,
+        FileSerialisationMethod dumpMethod,
+        ContentAddressMethod hashMethod,
+        HashAlgorithm hashAlgo,
+        const StorePathSet & references,
+        RepairFlag repair,
+        ImportFileHashes * fileHashes);
+
     void addTempRoot(const StorePath & path) override;
 
 private:
@@ -383,6 +405,14 @@ public:
      * symlinks for corruption.
      */
     void optimisePath(const std::filesystem::path & path, RepairFlag repair);
+
+    /**
+     * Optimise a single (typically freshly imported) store path: the
+     * whole-store walk is not needed, older paths are already
+     * farm-linked. fileHashes from addToStoreFromDump skips the
+     * per-file content re-read.
+     */
+    void optimisePath(const StorePath & path, OptimiseStats & stats, const ImportFileHashes * fileHashes = nullptr);
 
     bool verifyStore(bool checkContents, RepairFlag repair) override;
 
@@ -521,7 +551,9 @@ private:
         const std::filesystem::path & path,
         InodeHash & inodeHash,
         RepairFlag repair,
-        bool * parentToggled = nullptr);
+        bool * parentToggled = nullptr,
+        const ImportFileHashes * fileHashes = nullptr,
+        size_t fileHashesBase = 0);
 
     // Internal versions that are not wrapped in retry_sqlite.
     bool isValidPath_(State & state, const StorePath & path);

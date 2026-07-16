@@ -146,6 +146,8 @@ drive "NIXARCH BOOT OK" \
 	"1777" \
 	'pacman -Q 2>&1 >/dev/null | grep -q "duplicated database" || echo DB_CLEAN' \
 	"DB_CLEAN" \
+	'echo "shadow=$(stat -c %a /etc/shadow)"' \
+	"shadow=600" \
 	"command -v tree" \
 	"/usr/bin/tree" \
 	"nixgen-remove $NEWGEN" \

@@ -14,6 +14,7 @@
 #include "nix/util/signals.hh"
 #include "nix/store/posix-fs-canonicalise.hh"
 #include "nix/util/source-accessor.hh"
+#include "nix/util/fs-sink.hh"
 #include "nix/store/keys.hh"
 #include "nix/util/users.hh"
 #include "nix/store/store-registration.hh"
@@ -21,8 +22,12 @@
 #include <algorithm>
 #include <cstring>
 
+#include <condition_variable>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <new>
+#include <thread>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -1120,6 +1125,402 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source, RepairF
     }
 }
 
+/* True when farming hash work out to a thread can actually overlap
+   with the producer; on a single hardware thread the queueing is pure
+   overhead (chunk copies + context-switch churn). */
+static bool hashingThreadPaysOff()
+{
+    return std::thread::hardware_concurrency() > 1;
+}
+
+/* Runs a HashSink on its own thread. An import hashes the stream
+   twice (whole-NAR digest for the store path, per-file digests for
+   dedup); this takes one of them off the restore's critical path.
+   Bounded queue so a fast producer cannot balloon memory. Hashes
+   inline on single-core machines. */
+class AsyncHashSink : public Sink
+{
+    HashSink inner;
+    bool threaded;
+    std::thread worker;
+    std::mutex mtx;
+    std::condition_variable cvPush, cvPop;
+    std::deque<std::string> chunks;
+    bool closed = false;
+    std::exception_ptr failure;
+    static constexpr size_t maxQueued = 64;
+
+public:
+    AsyncHashSink(HashAlgorithm algo)
+        : inner(algo)
+        , threaded(hashingThreadPaysOff())
+    {
+        if (!threaded)
+            return;
+        worker = std::thread([this] {
+            std::unique_lock lk(mtx);
+            while (true) {
+                cvPush.wait(lk, [&] { return closed || !chunks.empty(); });
+                if (chunks.empty())
+                    return;
+                auto chunk = std::move(chunks.front());
+                chunks.pop_front();
+                lk.unlock();
+                cvPop.notify_one();
+                /* on failure keep draining so the producer never
+                   blocks on a full queue; rethrow at finish() */
+                if (!failure) {
+                    try {
+                        inner(chunk);
+                    } catch (...) {
+                        failure = std::current_exception();
+                    }
+                }
+                lk.lock();
+            }
+        });
+    }
+
+    void operator()(std::string_view data) override
+    {
+        if (!threaded) {
+            inner(data);
+            return;
+        }
+        std::unique_lock lk(mtx);
+        cvPop.wait(lk, [&] { return chunks.size() < maxQueued; });
+        chunks.emplace_back(data);
+        lk.unlock();
+        cvPush.notify_one();
+    }
+
+    void close()
+    {
+        {
+            std::lock_guard<std::mutex> lk(mtx);
+            closed = true;
+        }
+        cvPush.notify_one();
+        if (worker.joinable())
+            worker.join();
+    }
+
+    HashResult finish()
+    {
+        close();
+        if (failure)
+            std::rethrow_exception(failure);
+        return inner.finish();
+    }
+
+    ~AsyncHashSink()
+    {
+        try {
+            close();
+        } catch (...) {
+            ignoreExceptionInDestructor();
+        }
+    }
+};
+
+/* Hashes each regular file's single-file NAR serialisation (same
+   framing SourceAccessor::dumpPath emits, so the digest equals what
+   hashPath() would recompute from disk) on a worker thread, fed a
+   strictly ordered event stream by the restore below; inline on
+   single-core machines. Contents are hashed once, at restore time,
+   off the critical path, and optimisePath() never has to read them
+   back. */
+class AsyncFileHasher
+{
+    struct Ev
+    {
+        enum
+        {
+            Begin, /* data = map key */
+            Exec,
+            Size, /* size = contents length */
+            Data, /* data = contents chunk */
+            End,
+        } tag;
+
+        std::string data;
+        uint64_t size = 0;
+    };
+
+    LocalStore::ImportFileHashes & out;
+    bool threaded;
+    std::thread worker;
+    std::mutex mtx;
+    std::condition_variable cvPush, cvPop;
+    std::deque<Ev> events;
+    bool closed = false;
+    std::exception_ptr failure;
+    static constexpr size_t maxQueued = 64;
+
+    /* per-file state machine; worker-owned when threaded, caller-owned
+       otherwise (events per file are strictly ordered either way, so
+       the digests are identical) */
+    std::string key;
+    std::unique_ptr<HashSink> hash;
+    uint64_t size = 0;
+
+    void begin(std::string k)
+    {
+        key = std::move(k);
+        hash = std::make_unique<HashSink>(HashAlgorithm::SHA256);
+        *hash << narVersionMagic1 << "(" << "type" << "regular";
+    }
+
+    void exec()
+    {
+        *hash << "executable" << "";
+    }
+
+    void setSize(uint64_t s)
+    {
+        size = s;
+        *hash << "contents" << s;
+    }
+
+    void data(std::string_view d)
+    {
+        (*hash)(d);
+    }
+
+    void end()
+    {
+        writePadding(size, *hash);
+        *hash << ")";
+        out.files.insert_or_assign(std::move(key), hash->finish().hash);
+        hash.reset();
+    }
+
+    void push(Ev ev)
+    {
+        std::unique_lock lk(mtx);
+        cvPop.wait(lk, [&] { return events.size() < maxQueued; });
+        events.push_back(std::move(ev));
+        lk.unlock();
+        cvPush.notify_one();
+    }
+
+    void run()
+    {
+        std::unique_lock lk(mtx);
+        while (true) {
+            cvPush.wait(lk, [&] { return closed || !events.empty(); });
+            if (events.empty())
+                return;
+            auto ev = std::move(events.front());
+            events.pop_front();
+            lk.unlock();
+            cvPop.notify_one();
+            /* on failure keep draining so the producer never blocks
+               on a full queue; rethrow at finish() */
+            if (!failure) {
+                try {
+                    switch (ev.tag) {
+                    case Ev::Begin:
+                        begin(std::move(ev.data));
+                        break;
+                    case Ev::Exec:
+                        exec();
+                        break;
+                    case Ev::Size:
+                        setSize(ev.size);
+                        break;
+                    case Ev::Data:
+                        data(ev.data);
+                        break;
+                    case Ev::End:
+                        end();
+                        break;
+                    }
+                } catch (...) {
+                    failure = std::current_exception();
+                }
+            }
+            lk.lock();
+        }
+    }
+
+public:
+    AsyncFileHasher(LocalStore::ImportFileHashes & out)
+        : out(out)
+        , threaded(hashingThreadPaysOff())
+    {
+        if (threaded)
+            worker = std::thread([this] { run(); });
+    }
+
+    void fileBegin(std::string k)
+    {
+        if (threaded)
+            push({Ev::Begin, std::move(k)});
+        else
+            begin(std::move(k));
+    }
+
+    void fileExec()
+    {
+        if (threaded)
+            push({Ev::Exec});
+        else
+            exec();
+    }
+
+    void fileSize(uint64_t s)
+    {
+        if (threaded)
+            push({Ev::Size, {}, s});
+        else
+            setSize(s);
+    }
+
+    void fileData(std::string_view d)
+    {
+        if (threaded)
+            push({Ev::Data, std::string(d)});
+        else
+            data(d);
+    }
+
+    void fileEnd()
+    {
+        if (threaded)
+            push({Ev::End});
+        else
+            end();
+    }
+
+    void close()
+    {
+        {
+            std::lock_guard<std::mutex> lk(mtx);
+            closed = true;
+        }
+        cvPush.notify_one();
+        if (worker.joinable())
+            worker.join();
+    }
+
+    /* after this, `out` is complete and owned by the caller */
+    void finish()
+    {
+        close();
+        if (failure)
+            std::rethrow_exception(failure);
+    }
+
+    ~AsyncFileHasher()
+    {
+        try {
+            close();
+        } catch (...) {
+            ignoreExceptionInDestructor();
+        }
+    }
+};
+
+/* Forwards restore-sink calls to an inner sink, feeding regular-file
+   events to the AsyncFileHasher on the side. */
+struct FileHashingSink : FileSystemObjectSink
+{
+    FileSystemObjectSink & inner;
+    CanonPath prefix;
+    AsyncFileHasher & hasher;
+
+    FileHashingSink(FileSystemObjectSink & inner, CanonPath prefix, AsyncFileHasher & hasher)
+        : inner(inner)
+        , prefix(std::move(prefix))
+        , hasher(hasher)
+    {
+    }
+
+    void createDirectory(const CanonPath & path) override
+    {
+        inner.createDirectory(path);
+    }
+
+    void createDirectory(const CanonPath & path, DirectoryCreatedCallback callback) override
+    {
+        inner.createDirectory(path, [&](FileSystemObjectSink & dirSink, const CanonPath & rel) {
+            /* RestoreSink hands back a rerooted sink (rel = root); the
+               default impl hands back itself (rel = path). Either way
+               dirSink's root sits at prefix/path stripped of rel. */
+            assert(rel.isRoot() || rel == path);
+            FileHashingSink sub{dirSink, rel.isRoot() ? prefix / path : prefix, hasher};
+            callback(sub, rel);
+        });
+    }
+
+    void createSymlink(const CanonPath & path, const std::string & target) override
+    {
+        inner.createSymlink(path, target);
+    }
+
+    void createRegularFile(const CanonPath & path, fun<void(CreateRegularFileSink &)> func) override
+    {
+        inner.createRegularFile(path, [&](CreateRegularFileSink & crf) {
+            struct HashingCRF : CreateRegularFileSink
+            {
+                CreateRegularFileSink & inner;
+                AsyncFileHasher & hasher;
+
+                HashingCRF(CreateRegularFileSink & inner, AsyncFileHasher & hasher)
+                    : inner(inner)
+                    , hasher(hasher)
+                {
+                }
+
+                void isExecutable() override
+                {
+                    /* the parser reports this before contents,
+                       matching dump order */
+                    hasher.fileExec();
+                    inner.isExecutable();
+                }
+
+                void preallocateContents(uint64_t s) override
+                {
+                    hasher.fileSize(s);
+                    inner.preallocateContents(s);
+                }
+
+                void operator()(std::string_view data) override
+                {
+                    hasher.fileData(data);
+                    inner(data);
+                }
+            } hcrf{crf, hasher};
+            hasher.fileBegin((prefix / path).abs());
+            func(hcrf);
+            hasher.fileEnd();
+        });
+    }
+};
+
+/* restorePath(), optionally capturing per-file hashes. Only NAR dumps
+   carry the per-file structure; Flat dumps fall back unrecorded. */
+static void restorePathCapturingHashes(
+    const std::filesystem::path & path,
+    Source & source,
+    FileSerialisationMethod method,
+    bool startFsync,
+    LocalStore::ImportFileHashes * fileHashes)
+{
+    if (!fileHashes || method != FileSerialisationMethod::NixArchive) {
+        restorePath(path, source, method, startFsync);
+        return;
+    }
+    RestoreSink inner{startFsync};
+    inner.dstPath = path;
+    AsyncFileHasher hasher{*fileHashes};
+    FileHashingSink sink{inner, CanonPath::root, hasher};
+    parseDump(sink, source);
+    hasher.finish();
+}
+
 StorePath LocalStore::addToStoreFromDump(
     Source & source0,
     std::string_view name,
@@ -1129,8 +1530,22 @@ StorePath LocalStore::addToStoreFromDump(
     const StorePathSet & references,
     RepairFlag repair)
 {
-    /* For computing the store path. */
-    auto hashSink = std::make_unique<HashSink>(hashAlgo);
+    return addToStoreFromDump(source0, name, dumpMethod, hashMethod, hashAlgo, references, repair, nullptr);
+}
+
+StorePath LocalStore::addToStoreFromDump(
+    Source & source0,
+    std::string_view name,
+    FileSerialisationMethod dumpMethod,
+    ContentAddressMethod hashMethod,
+    HashAlgorithm hashAlgo,
+    const StorePathSet & references,
+    RepairFlag repair,
+    ImportFileHashes * fileHashes)
+{
+    /* For computing the store path; hashed off-thread so it overlaps
+       with the restore below. */
+    auto hashSink = std::make_unique<AsyncHashSink>(hashAlgo);
     TeeSource source{source0, *hashSink};
     const LocalSettings & localSettings = config->getLocalSettings();
 
@@ -1196,7 +1611,7 @@ StorePath LocalStore::addToStoreFromDump(
         delTempDir = std::make_unique<AutoDelete>(tempDir);
         tempPath = tempDir / "x";
 
-        restorePath(tempPath, bothSource, dumpMethod, localSettings.fsyncStorePaths);
+        restorePathCapturingHashes(tempPath, bothSource, dumpMethod, localSettings.fsyncStorePaths, fileHashes);
 
         dumpBuffer.reset();
         dump = {};
@@ -1241,7 +1656,8 @@ StorePath LocalStore::addToStoreFromDump(
                 switch (fim) {
                 case FileIngestionMethod::Flat:
                 case FileIngestionMethod::NixArchive:
-                    restorePath(realPath, dumpSource, (FileSerialisationMethod) fim, localSettings.fsyncStorePaths);
+                    restorePathCapturingHashes(
+                        realPath, dumpSource, (FileSerialisationMethod) fim, localSettings.fsyncStorePaths, fileHashes);
                     break;
                 case FileIngestionMethod::Git:
                     // doesn't correspond to serialization method, so

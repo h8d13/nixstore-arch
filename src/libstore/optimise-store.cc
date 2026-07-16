@@ -105,7 +105,9 @@ void LocalStore::optimisePath_(
     const std::filesystem::path & path,
     InodeHash & inodeHash,
     RepairFlag repair,
-    bool * parentToggled)
+    bool * parentToggled,
+    const ImportFileHashes * fileHashes,
+    size_t fileHashesBase)
 {
     checkInterrupt();
 
@@ -127,7 +129,7 @@ void LocalStore::optimisePath_(
             }
         });
         for (auto & i : names)
-            optimisePath_(act, stats, path / i, inodeHash, repair, &toggled);
+            optimisePath_(act, stats, path / i, inodeHash, repair, &toggled, fileHashes, fileHashesBase);
         return;
     }
 
@@ -170,8 +172,21 @@ void LocalStore::optimisePath_(
 
        Also note that if `path' is a symlink, then we're hashing the
        contents of the symlink (i.e. the result of readlink()), not
-       the contents of the target (which may not even exist). */
-    Hash hash = hashPath(makeFSSourceAccessor(path), FileSerialisationMethod::NixArchive, HashAlgorithm::SHA256).hash;
+       the contents of the target (which may not even exist).
+
+       An import that captured per-file hashes while restoring spares
+       the content re-read; anything not in the map (concurrent
+       changes, symlinks) falls back to hashing from disk. */
+    Hash hash = [&] {
+        if (fileHashes && S_ISREG(st.st_mode)) {
+            auto rel = path.native().substr(fileHashesBase);
+            if (rel.empty())
+                rel = "/";
+            if (auto it = fileHashes->files.find(rel); it != fileHashes->files.end())
+                return it->second;
+        }
+        return hashPath(makeFSSourceAccessor(path), FileSerialisationMethod::NixArchive, HashAlgorithm::SHA256).hash;
+    }();
     debug("%s has hash '%s'", PathFmt(path), hash.to_string(HashFormat::Nix32, true));
 
     /* Check if this is a known hash. Single component parse: this runs
@@ -380,6 +395,19 @@ void LocalStore::optimisePath(const std::filesystem::path & path, RepairFlag rep
 
     if (config->getLocalSettings().autoOptimiseStore)
         optimisePath_(nullptr, stats, path, inodeHash, repair);
+}
+
+void LocalStore::optimisePath(const StorePath & path, OptimiseStats & stats, const ImportFileHashes * fileHashes)
+{
+    std::lock_guard<std::mutex> runLock(optimiseStoreLock);
+
+    addTempRoot(path);
+    if (!isValidPath(path))
+        return; /* path was GC'ed, probably */
+
+    InodeHash inodeHash = loadInodeHash();
+    std::filesystem::path realPath = config->realStoreDir.get() / path.to_string();
+    optimisePath_(nullptr, stats, realPath, inodeHash, NoRepair, nullptr, fileHashes, realPath.native().size());
 }
 
 } // namespace nix

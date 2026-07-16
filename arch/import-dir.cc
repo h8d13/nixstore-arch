@@ -1,14 +1,19 @@
 // Import any directory tree into a local store as one content-addressed
-// store path, then deduplicate the whole store.
+// store path, then hard-link-deduplicate it against the store's link
+// farm. Only the new path is optimised (older paths are already
+// farm-linked), using per-file hashes captured while the import
+// streamed through, so nothing is read twice.
 // usage: import-dir <store-root> <name> <dir>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 
 #include <nix/store/globals.hh>
 #include <nix/store/local-store.hh>
 #include <nix/store/store-open.hh>
 #include <nix/util/config-global.hh>
+#include <nix/util/serialise.hh>
 #include <nix/util/source-accessor.hh>
 
 using namespace nix;
@@ -33,7 +38,21 @@ int main(int argc, char ** argv)
 	auto dir = std::filesystem::absolute(argv[3]);
 
 	auto t0 = std::chrono::steady_clock::now();
-	auto path = store->addToStore(argv[2], {makeFSSourceAccessor(dir), CanonPath::root});
+	/* Store::addToStore minus the ceremony, with per-file hash capture
+	   for the optimise pass below */
+	LocalStore::ImportFileHashes fileHashes;
+	std::optional<StorePath> imported;
+	{
+		auto sink = sourceToSink([&](Source & source) {
+			imported = local->addToStoreFromDump(source, argv[2],
+				FileSerialisationMethod::NixArchive,
+				ContentAddressMethod::Raw::NixArchive,
+				HashAlgorithm::SHA256, {}, NoRepair, &fileHashes);
+		});
+		SourcePath{makeFSSourceAccessor(dir), CanonPath::root}.dumpPath(*sink);
+		sink->finish();
+	}
+	auto path = *imported;
 	auto t1 = std::chrono::steady_clock::now();
 	printf("imported: %s (%.1f s)\n", store->printStorePath(path).c_str(),
 		std::chrono::duration<double>(t1 - t0).count());
@@ -45,7 +64,7 @@ int main(int argc, char ** argv)
 
 	OptimiseStats stats;
 	auto t2 = std::chrono::steady_clock::now();
-	local->optimiseStore(stats);
+	local->optimisePath(path, stats, &fileHashes);
 	auto t3 = std::chrono::steady_clock::now();
 	printf("optimise: linked %lu files, freed %.1f MiB (%.1f s)\n",
 		stats.filesLinked, stats.bytesFreed / (1024.0 * 1024.0),
