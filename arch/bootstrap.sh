@@ -67,8 +67,10 @@ chroot "$TMP/root" /usr/bin/env -i \
 	HOME=/root PATH=/usr/bin:/usr/sbin TERM=dumb \
 	sh -c 'pacman-key --init && pacman-key --populate archlinux'
 
-umount -R "$TMP/root/dev"
-umount "$TMP/root/proc" "$TMP/root/run" "$TMP/root/tmp"
+# lazy: gpg-agent from the keyring init holds /dev/null past the
+# chroot; detach is immediate, mounts die with the namespace
+umount -Rl "$TMP/root/dev"
+umount -l "$TMP/root/proc" "$TMP/root/run" "$TMP/root/tmp"
 
 # gpg-agent leaves sockets in etc/pacman.d/gnupg; NAR can't hold them
 find "$TMP/root" \( -type s -o -type p \) -delete

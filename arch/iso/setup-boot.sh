@@ -13,6 +13,12 @@ install -Dm644 "$I/initcpio-hook-nixgen" /etc/initcpio/hooks/nixgen
 install -Dm644 "$I/mkinitcpio.conf" /etc/mkinitcpio.conf.d/nixgen.conf
 
 echo nixarch > /etc/hostname
+# login banner: stock /etc/issue renders \S{PRETTY_NAME} from
+# os-release. Override the pretty name via the /etc precedence file
+# (stock is a symlink into /usr/lib; rm first or > would follow it);
+# NAME/ID stay arch for tooling
+rm /etc/os-release
+sed 's/^PRETTY_NAME=.*/PRETTY_NAME="nixarch"/' /usr/lib/os-release > /etc/os-release
 # bake the machine identity into the generation: without it every boot
 # is a systemd "first boot" (tmpfs upper) and re-applies preset policy.
 # Generations of one machine sharing an id is the correct semantic.
@@ -102,10 +108,12 @@ EOF
 
 # kernel install triggers mkinitcpio -P via ALPM hook, which picks up
 # the conf.d drop-in above and bakes the nixgen hook into the image.
-# grub/dosfstools/e2fsprogs serve nixgen-setup; trailing libs = runtime
+# -Syu, not -Sy: the base is a monthly bootstrap tarball, installing
+# against a fresh db without upgrading it would ship gen1 as a partial
+# upgrade. nixgen-setup's extra deps (grub, dosfstools) install on
+# demand there, not into every generation; trailing libs = runtime
 # deps of import-dir/libnixstore
-pacman -Sy --noconfirm --needed linux mkinitcpio squashfs-tools diffutils \
-	grub dosfstools e2fsprogs \
+pacman -Syu --noconfirm --needed linux mkinitcpio squashfs-tools diffutils \
 	libblake3 boost-libs libsodium onetbb sqlite icu libxml2 libseccomp brotli
 
 # resolved-managed DNS. Last on purpose: pacman above still needed the

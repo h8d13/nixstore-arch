@@ -28,6 +28,18 @@ printf 'everything on %s will be lost. type the device path to continue: ' "$DEV
 read -r reply
 [ "$reply" = "$DEV" ] || { echo "aborted"; exit 1; }
 
+# install is rare: its deps stay out of the generations and land in
+# the ephemeral upper on demand (gone at reboot unless committed).
+# Plain -S against the generation's baked db: versions match the
+# running snapshot, no partial upgrade (-Sy <pkg> is never right). A
+# stale generation's versions may be gone from live mirrors; the
+# consistent way forward is a full update, not a db refresh here
+pacman -S --needed --noconfirm grub dosfstools || {
+	echo "setup: dep install failed (stale generation?);" \
+		"nixgen-update + reboot, then retry" >&2
+	exit 1
+}
+
 sfdisk -q "$DEV" <<EOF
 label: gpt
 start=1MiB, size=64MiB, type=uefi

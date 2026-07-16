@@ -58,8 +58,10 @@ COMMANDS
               Install onto a disk from inside the box: GPT (ESP +
               NIXSTORE), standalone GRUB, fresh store seeded with a
               commit of the running root (mkbootdisk's layout, built
-              live). UEFI only; unplug a NIXSTORE-labeled installer
-              stick before first boot (GRUB searches by label).
+              live). Deps (grub, dosfstools) install on demand into
+              the ephemeral upper: needs network, gone at reboot.
+              UEFI only; unplug a NIXSTORE-labeled installer stick
+              before first boot (GRUB searches by label).
 
 INTERNALS
        nixgen-savemeta <root>

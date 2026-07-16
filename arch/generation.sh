@@ -83,8 +83,11 @@ chroot "$TMP/mnt" /usr/bin/env -i \
 	HOME=/root PATH=/usr/bin:/usr/sbin TERM=\${TERM:-dumb} \
 	sh -c '$CMD'
 
-umount -R "$TMP/mnt/dev"
-umount "$TMP/mnt/proc" "$TMP/mnt/run" "$TMP/mnt/tmp"
+# lazy: a hook-spawned daemon (gpg-agent after a keyring update) can
+# hold /dev/null busy past the chroot command; the detach is immediate
+# for the import below, the mounts die with the namespace
+umount -Rl "$TMP/mnt/dev"
+umount -l "$TMP/mnt/proc" "$TMP/mnt/run" "$TMP/mnt/tmp"
 
 # resolv.conf: the host copy above was build scaffolding. A command that
 # replaced it (e.g. symlink to systemd-resolved) keeps its version;
