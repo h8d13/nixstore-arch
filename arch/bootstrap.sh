@@ -47,8 +47,19 @@ sed -i 's/^CheckSpace/#CheckSpace/; s/^DownloadUser/#DownloadUser/' \
 echo 'Server = https://geo.mirror.pkgbuild.com/\$repo/os/\$arch' \
 	> "$TMP/root/etc/pacman.d/mirrorlist"
 
-mount --rbind /dev "$TMP/root/dev"
+# minimal /dev + tmpfs run/tmp, same sandbox surface as generation.sh
+mount -t tmpfs -o mode=0755,nosuid dev "$TMP/root/dev"
+for d in full null random tty urandom zero; do
+	touch "$TMP/root/dev/\$d"
+	mount --bind "/dev/\$d" "$TMP/root/dev/\$d"
+done
+ln -s /proc/self/fd "$TMP/root/dev/fd"
+ln -s /proc/self/fd/0 "$TMP/root/dev/stdin"
+ln -s /proc/self/fd/1 "$TMP/root/dev/stdout"
+ln -s /proc/self/fd/2 "$TMP/root/dev/stderr"
 mount -t proc proc "$TMP/root/proc"
+mount -t tmpfs -o mode=0755,nosuid,nodev run "$TMP/root/run"
+mount -t tmpfs -o mode=1777,strictatime,nodev,nosuid tmp "$TMP/root/tmp"
 rm -f "$TMP/root/etc/resolv.conf"
 cp /etc/resolv.conf "$TMP/root/etc/resolv.conf"
 
@@ -56,11 +67,10 @@ chroot "$TMP/root" /usr/bin/env -i \
 	HOME=/root PATH=/usr/bin:/usr/sbin TERM=dumb \
 	sh -c 'pacman-key --init && pacman-key --populate archlinux'
 
-umount -l "$TMP/root/dev"
-umount "$TMP/root/proc"
+umount -R "$TMP/root/dev"
+umount "$TMP/root/proc" "$TMP/root/run" "$TMP/root/tmp"
 
 # gpg-agent leaves sockets in etc/pacman.d/gnupg; NAR can't hold them
-rm -rf "$TMP/root/tmp"/* "$TMP/root/tmp"/.[!.]* "$TMP/root/run"/* 2>/dev/null || true
 find "$TMP/root" \( -type s -o -type p \) -delete
 
 "$REPO/arch/iso/nixgen-savemeta" "$TMP/root"

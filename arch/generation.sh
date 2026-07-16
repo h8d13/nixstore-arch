@@ -56,8 +56,23 @@ else
 	echo "WARN: $BASE has no etc/nixgen/perms; canonical 0555 modes" \
 		"stay, pacman will warn (re-bootstrap the base)" >&2
 fi
-mount --rbind /dev "$TMP/mnt/dev"
+# minimal /dev (arch-chroot unshare_setup parity): six pseudo-device
+# binds instead of an rbind of host /dev, so tmpfiles/udev hooks find
+# no real nodes to chown (fchownat EPERM noise, failed pacman hook).
+# /run and /tmp are namespace tmpfs: scaffolding and scratch never
+# reach the upper
+mount -t tmpfs -o mode=0755,nosuid dev "$TMP/mnt/dev"
+for d in full null random tty urandom zero; do
+	touch "$TMP/mnt/dev/\$d"
+	mount --bind "/dev/\$d" "$TMP/mnt/dev/\$d"
+done
+ln -s /proc/self/fd "$TMP/mnt/dev/fd"
+ln -s /proc/self/fd/0 "$TMP/mnt/dev/stdin"
+ln -s /proc/self/fd/1 "$TMP/mnt/dev/stdout"
+ln -s /proc/self/fd/2 "$TMP/mnt/dev/stderr"
 mount -t proc proc "$TMP/mnt/proc"
+mount -t tmpfs -o mode=0755,nosuid,nodev run "$TMP/mnt/run"
+mount -t tmpfs -o mode=1777,strictatime,nodev,nosuid tmp "$TMP/mnt/tmp"
 rm -f "$TMP/mnt/etc/resolv.conf"
 cp /etc/resolv.conf "$TMP/mnt/etc/resolv.conf"
 if [ -n "\$INJECT" ]; then
@@ -68,8 +83,8 @@ chroot "$TMP/mnt" /usr/bin/env -i \
 	HOME=/root PATH=/usr/bin:/usr/sbin TERM=\${TERM:-dumb} \
 	sh -c '$CMD'
 
-umount -l "$TMP/mnt/dev"
-umount "$TMP/mnt/proc"
+umount -R "$TMP/mnt/dev"
+umount "$TMP/mnt/proc" "$TMP/mnt/run" "$TMP/mnt/tmp"
 
 # resolv.conf: the host copy above was build scaffolding. A command that
 # replaced it (e.g. symlink to systemd-resolved) keeps its version;
@@ -82,9 +97,9 @@ if [ ! -L "$TMP/mnt/etc/resolv.conf" ] \
 	fi
 fi
 
-# scrub what a generation must not capture: scratch dirs, and
-# sockets/fifos (NAR cannot represent them)
-rm -rf "$TMP/mnt/tmp"/* "$TMP/mnt/tmp"/.[!.]* "$TMP/mnt/run"/* 2>/dev/null || true
+# scrub what a generation must not capture: sockets/fifos (NAR cannot
+# represent them; gpg-agent drops them in /etc/pacman.d/gnupg).
+# /tmp and /run were namespace tmpfs, nothing of them is in the upper
 find "$TMP/mnt" \( -type s -o -type p \) -delete
 
 "$REPO/arch/iso/nixgen-savemeta" "$TMP/mnt"

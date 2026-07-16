@@ -8,7 +8,9 @@ I=/run/inject
 
 install -Dm644 "$I/initcpio-install-nixgen" /etc/initcpio/install/nixgen
 install -Dm644 "$I/initcpio-hook-nixgen" /etc/initcpio/hooks/nixgen
-install -Dm644 "$I/mkinitcpio.conf" /etc/mkinitcpio.conf
+# conf.d drop-in, not /etc/mkinitcpio.conf: pacman owns that file and
+# pre-placing it yields a .pacnew warning at kernel install
+install -Dm644 "$I/mkinitcpio.conf" /etc/mkinitcpio.conf.d/nixgen.conf
 
 echo nixarch > /etc/hostname
 # bake the machine identity into the generation: without it every boot
@@ -29,11 +31,13 @@ systemctl enable systemd-networkd systemd-resolved
 ln -sf /dev/null /etc/systemd/system/systemd-firstboot.service
 
 # conditional autologin (nixgen-getty): prompt-free only while root is
-# passwordless; passwd root restores normal login on the next getty
+# passwordless; passwd root restores normal login on the next getty.
+# Template-wide drop-in: logind autovts (tty2+) get it too, root's
+# stock shadow entry "*" can never pass a password prompt
 install -m755 "$I/nixgen-getty" /usr/local/bin/nixgen-getty
-install -d /etc/systemd/system/getty@tty1.service.d \
+install -d /etc/systemd/system/getty@.service.d \
 	/etc/systemd/system/serial-getty@.service.d
-cat > /etc/systemd/system/getty@tty1.service.d/autologin.conf <<EOF
+cat > /etc/systemd/system/getty@.service.d/autologin.conf <<EOF
 [Service]
 ExecStart=
 ExecStart=-/usr/local/bin/nixgen-getty --noclear %I \$TERM

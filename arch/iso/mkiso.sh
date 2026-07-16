@@ -38,7 +38,11 @@ if [ -n "$REBUILD" ]; then
 			"$STORE" "$(basename "$g")"
 	done
 fi
-GEN1=$(ls -td "$SDIR"/*-nixarch-1 | head -1)
+GEN1=
+for g in "$SDIR"/*-nixarch-1; do
+	[ -d "$g" ] || continue
+	GEN1=$g
+done
 
 # --- gen 1: base + kernel + nixgen hook -------------------------------
 # generation.sh sandbox with the iso scaffolding (initcpio hooks, configs,

@@ -28,8 +28,19 @@ cat > "$TMP/inner.sh" <<EOF
 set -e
 mount -t overlay overlay \
 	-o "lowerdir=$BASE,upperdir=$TMP/upper,workdir=$TMP/work" "$TMP/mnt"
-mount --rbind /dev "$TMP/mnt/dev"
+# minimal /dev + tmpfs run/tmp, same sandbox surface as generation.sh
+mount -t tmpfs -o mode=0755,nosuid dev "$TMP/mnt/dev"
+for d in full null random tty urandom zero; do
+	touch "$TMP/mnt/dev/\$d"
+	mount --bind "/dev/\$d" "$TMP/mnt/dev/\$d"
+done
+ln -s /proc/self/fd "$TMP/mnt/dev/fd"
+ln -s /proc/self/fd/0 "$TMP/mnt/dev/stdin"
+ln -s /proc/self/fd/1 "$TMP/mnt/dev/stdout"
+ln -s /proc/self/fd/2 "$TMP/mnt/dev/stderr"
 mount -t proc proc "$TMP/mnt/proc"
+mount -t tmpfs -o mode=0755,nosuid,nodev run "$TMP/mnt/run"
+mount -t tmpfs -o mode=1777,strictatime,nodev,nosuid tmp "$TMP/mnt/tmp"
 rm -f "$TMP/mnt/etc/resolv.conf"
 cp /etc/resolv.conf "$TMP/mnt/etc/resolv.conf"
 

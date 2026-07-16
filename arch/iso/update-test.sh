@@ -152,6 +152,8 @@ drive "NIXARCH BOOT OK" \
 	"STORE_PATH_GONE" \
 	'ps -o args= -C agetty | grep tty1 | grep -q autologin && echo AUTO_TTY1' \
 	"AUTO_TTY1" \
+	'systemctl start getty@tty2 && sleep 1 && ps -o args= -C agetty | grep tty2 | grep -q autologin && echo AUTO_TTY2' \
+	"AUTO_TTY2" \
 	"nixgen-commit test-sw" \
 	"visible next boot" \
 	"nixgen-switch test-sw" \
