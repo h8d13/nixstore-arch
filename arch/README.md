@@ -35,19 +35,18 @@ builds the *next* generation offline; the running root is never touched.
 | `tests/meta-test.sh` | host-only: user created in the sandbox survives manifest + restmeta replay |
 
 
-Inside the box (installed by setup-boot.sh): `nixgen-commit`,
-`-update`, `-switch`, `-remove`, `-listid`, `-diffid`, `-setup`,
-`-send`, `-recv`
-(install to disk), `-help`. The reference is `nixgen-help` (source:
+Inside the box (installed by setup-boot.sh):
+`nixgen-commit`, `-update`, `-switch`, `-remove`, `-listid`, `-diffid`, `-setup`,
+`-send`, `-recv`, `-help`. The reference is `nixgen-help` (source:
 [nixgen/nixgen-help](nixgen/nixgen-help), drift-checked by
 update-test: every installed nixgen-* must appear in it).
 
 ## From nothing
 
 Host deps: build deps from the root README, plus
-`pacman -S --needed grub xorriso mtools e2fsprogs qemu-base edk2-ovmf`.
+`pacman -S --needed grub xorriso mtools e2fsprogs (qemu-base edk2-ovmf)`.
 No root needed anywhere; no squashfs-tools (mksquashfs runs from
-inside the generation).
+inside the generation). QEMU optional.
 
 ```
 ./build.sh                                     # libs into build/prefix
