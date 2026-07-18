@@ -26,7 +26,10 @@ mkdir -p etc/nixgen
 # tmp trees are pruned (the 1777 dirs themselves stay captured):
 # runtime droppings like systemd PrivateTmp dirs vanish between the
 # walk and the import on a live commit, leaving rows with no file
-find . -xdev \( -path './tmp/*' -o -path './var/tmp/*' \) -prune \
+# -mindepth 1: the tree root's mode is the builder's upper mkdir (755
+# sandbox, 755 boot tmpfs, 555 iso build): capturing "." makes equal
+# trees produce different manifests depending on who built them
+find . -mindepth 1 -xdev \( -path './tmp/*' -o -path './var/tmp/*' \) -prune \
 	-o \( -type d ! \( -perm 555 -user 0 -group 0 \) \
 	-o -type f \( -perm /7022 -o ! -perm -444 -o ! -user 0 -o ! -group 0 \
 		-o -path ./etc/skel/\* \) \
@@ -34,5 +37,11 @@ find . -xdev \( -path './tmp/*' -o -path './var/tmp/*' \) -prune \
 	-printf '%y\t%m\t%U\t%G\t%p\n' | sort -t'	' -k5 > etc/nixgen/perms
 getcap -r . > etc/nixgen/caps
 # -s: only paths carrying extended/default ACLs; numeric ids stay
-# resolution-independent like the perms manifest
-getfacl -Rsp --numeric . > etc/nixgen/acls
+# resolution-independent like the perms manifest.
+# Explicit sorted list, not -R: readdir walk order differs between
+# filesystems and would reorder the manifest for identical trees.
+# journal pruned: journald re-applies its journal ACLs on write and
+# rotates files, capturing them churns the manifest every build. A
+# stable manifest is what makes no-op update detection possible
+find . -mindepth 1 -xdev -path ./var/log/journal -prune -o -print0 \
+	| sort -z | xargs -0 -r getfacl -sPp --numeric > etc/nixgen/acls
