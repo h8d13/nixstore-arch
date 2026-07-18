@@ -43,5 +43,7 @@ fi
 
 A=$R/etc/nixgen/acls
 if [ -s "$A" ]; then
-	setfacl --restore="$A" || echo "restmeta: some ACLs skipped" >&2
+	# -P: rows are physical paths (getfacl -R capture); following a
+	# symlink component would apply an ACL outside the tree
+	setfacl -P --restore="$A" || echo "restmeta: some ACLs skipped" >&2
 fi

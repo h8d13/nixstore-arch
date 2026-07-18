@@ -72,6 +72,34 @@ rm -rf "$SCRATCH/mnt/tmp"/* "$SCRATCH/mnt/tmp"/.[!.]* "$SCRATCH/mnt/run"/* \
 find "$SCRATCH/mnt" \( -type s -o -type p \) -delete
 
 /usr/local/bin/nixgen-savemeta "$SCRATCH/mnt"
+
+# Bail before import when the tree is unchanged (pacman "nothing to
+# do", no-op cmd). Content-only check: savemeta above folded metadata
+# deltas into etc/nixgen/perms, so lower-equal upper files are pure
+# copy-up noise (restmeta modes, restored resolv.conf). Sync db
+# refresh and pacman.log churn happen every run and never justify a
+# generation; a new empty dir alone is not seen (accepted miss).
+CHG=\$(cd "$SCRATCH/upper" && find . -mindepth 1 \
+	\( -path ./var/lib/pacman/sync -o -path ./var/log/pacman.log \) \
+	-prune -o ! -type d -print | while IFS= read -r p; do
+	rel=\${p#./}
+	if [ -f "\$p" ] && [ -f "$LOWER/\$rel" ] \
+			&& cmp -s -- "\$p" "$LOWER/\$rel"; then
+		continue
+	fi
+	if [ -h "\$p" ] && [ -h "$LOWER/\$rel" ] && [ \
+			"\$(readlink -- "\$p")" = \
+			"\$(readlink -- "$LOWER/\$rel")" ]; then
+		continue
+	fi
+	echo "\$rel"
+	break
+done)
+if [ -z "\$CHG" ]; then
+	: > "$SCRATCH/imported"
+	exit 0
+fi
+
 # import-dir stdout is exactly the store path (mtime-based ls -t
 # selection cannot work, store mtimes are all canonicalised to 1);
 # stash it for the outer shell across the namespace boundary
@@ -81,6 +109,10 @@ EOF
 unshare -mpf --kill-child sh "$SCRATCH/inner.sh"
 
 NEW=$(cat "$SCRATCH/imported")
+[ -n "$NEW" ] || {
+	echo "no change: tree matches $GEN, nothing to import"
+	exit 0
+}
 NEWGEN=$(basename "$NEW")
 
 # new entry boots the new generation's own kernel+initramfs (a kernel

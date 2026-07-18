@@ -96,6 +96,8 @@ QPID=$!
 OUT=$(drive "NIXARCH BOOT OK" \
 	"nixgen-update test-up '$UPCMD'" \
 	"reboot to switch" \
+	"nixgen-update noop-up true" \
+	"no change" \
 	"poweroff") || { kill $QPID 2>/dev/null; exit 1; }
 wait $QPID
 NEWGEN=$(echo "$OUT" | sed -n 's/.*updated: \([^ ]*\).*/\1/p')
