@@ -24,6 +24,21 @@ trap 'umount "$SNAP"' EXIT
 # NAR can't represent sockets/fifos; these are runtime droppings (gpg
 # agent et al) so deleting them from the live root is fine
 find "$SNAP" \( -type s -o -type p \) -print -delete
+# cached downloads are not system state (nixgen-update scrubs the same);
+# this deletes from the live root, like the socket scrub above
+[ ! -d "$SNAP/var/cache/pacman/pkg" ] || \
+	find "$SNAP/var/cache/pacman/pkg" -mindepth 1 -delete
+
+# import materialises the full un-deduped snapshot in the store before
+# optimise hardlinks it; without room for that peak it dies mid-stream
+# (ENOSPC). du undercounts vs NAR (hardlinks once), treat as a floor
+NEED=$(du -sxm "$SNAP" | cut -f1)
+FREE=$(df -Pm "$TARGET" | awk 'NR==2 { print $4 }')
+[ "$FREE" -ge "$NEED" ] || {
+	echo "not enough space on $TARGET: snapshot needs ~${NEED}M" \
+		"un-deduped, ${FREE}M free (nixgen-remove old generations?)" >&2
+	exit 1
+}
 
 /usr/local/bin/nixgen-savemeta "$SNAP"
 # import-dir stdout is exactly the store path; mtime-based selection

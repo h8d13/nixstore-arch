@@ -15,10 +15,14 @@ cd "$R"
 
 # batch chmod per distinct mode value: dirs dominate the manifest and
 # collapse to a handful of exec calls. Symlink rows are skipped:
-# their mode is meaningless and chmod would follow the link
+# their mode is meaningless and chmod would follow the link.
+# Fail soft: commit snapshots a live root, so a row can outlive its
+# file (a service's PrivateTmp dir vanished mid-commit); one stale row
+# aborting the whole replay (sh -e) left /home unowned once
 awk -F'\t' '$1 != "l" { print $2 }' "$M" | sort -u | while read -r mode; do
 	awk -F'\t' -v m="$mode" '$1 != "l" && $2 == m { print $5 }' "$M" \
-		| tr '\n' '\0' | xargs -0 -r chmod "$mode"
+		| tr '\n' '\0' | xargs -0 -r chmod "$mode" \
+		|| echo "restmeta: some mode-$mode paths skipped" >&2
 done
 
 # ownership deviations are few, applied one by one; -h never follows

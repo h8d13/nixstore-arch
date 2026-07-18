@@ -23,7 +23,11 @@ mkdir -p etc/nixgen
 # /etc/skel is captured whole: its modes are template data that
 # useradd copies to new users; canonical 444 there means every user
 # starts with a readonly .bashrc
-find . -xdev \( -type d ! \( -perm 555 -user 0 -group 0 \) \
+# tmp trees are pruned (the 1777 dirs themselves stay captured):
+# runtime droppings like systemd PrivateTmp dirs vanish between the
+# walk and the import on a live commit, leaving rows with no file
+find . -xdev \( -path './tmp/*' -o -path './var/tmp/*' \) -prune \
+	-o \( -type d ! \( -perm 555 -user 0 -group 0 \) \
 	-o -type f \( -perm /7022 -o ! -perm -444 -o ! -user 0 -o ! -group 0 \
 		-o -path ./etc/skel/\* \) \
 	-o -type l ! \( -user 0 -group 0 \) \) \

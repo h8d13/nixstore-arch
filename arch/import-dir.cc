@@ -22,7 +22,7 @@
 using namespace nix;
 
 int main(int argc, char ** argv)
-{
+try {
 	if (argc != 4) {
 		fprintf(stderr, "usage: %s <store-root> <name> <dir>\n", argv[0]);
 		return 1;
@@ -76,4 +76,9 @@ int main(int argc, char ** argv)
 	/* real (root-prefixed) path: callers use it as a directory */
 	printf("%s\n", local->toRealPath(path).c_str());
 	return 0;
+} catch (std::exception & e) {
+	/* a full store (ENOSPC) etc. must not end in std::terminate: the
+	   partial temp dir cleans up on unwind, callers get a message */
+	fprintf(stderr, "import-dir: %s\n", e.what());
+	return 1;
 }

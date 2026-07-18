@@ -61,7 +61,9 @@ grub-mkstandalone -O x86_64-efi --locales= --themes= \
 	-o "$TMP/BOOTX64.EFI" "boot/grub/grub.cfg=$TMP/embed.cfg"
 
 truncate -s 64M "$TMP/esp.img"
-mkfs.vfat -F 32 -n NIXBOOT "$TMP/esp.img"
+# mformat, not mkfs.vfat: mtools is already a host dep for mmd/mcopy,
+# dosfstools would be one more package for the same FAT32
+mformat -i "$TMP/esp.img" -F -v NIXBOOT ::
 mmd -i "$TMP/esp.img" ::/EFI ::/EFI/BOOT
 mcopy -i "$TMP/esp.img" "$TMP/BOOTX64.EFI" ::/EFI/BOOT/
 

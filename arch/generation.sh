@@ -20,7 +20,8 @@ STORE_ROOT=$1 BASE=$2 NAME=$3
 shift 3
 CMD=${*:-/usr/bin/bash}
 
-[ -x "$REPO/build/import-dir" ] || {
+# -nt: also recompile when the source is newer than the binary
+[ "$REPO/build/import-dir" -nt arch/import-dir.cc ] || {
 	g++ -std=c++23 -O2 arch/import-dir.cc -o build/import-dir \
 		$(PKG_CONFIG_PATH=$P/lib/pkgconfig pkg-config --cflags --libs nix-store nix-util)
 }

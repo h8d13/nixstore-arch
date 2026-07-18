@@ -17,7 +17,9 @@ LABEL=NIXISO
 
 P=$REPO/build/prefix
 for t in rm-path import-dir export-path import-path; do
-	[ -x "$REPO/build/$t" ] || g++ -std=c++23 -O2 "arch/$t.cc" -o "build/$t" \
+	# -nt: also recompile when the source is newer than the binary
+	[ "$REPO/build/$t" -nt "arch/$t.cc" ] || g++ -std=c++23 -O2 \
+		"arch/$t.cc" -o "build/$t" \
 		$(PKG_CONFIG_PATH=$P/lib/pkgconfig pkg-config --cflags --libs nix-store nix-util)
 done
 
