@@ -1,0 +1,57 @@
+name: Release nixarch ISO
+
+# Full from-scratch pipeline: store libs -> arch base generation ->
+# bootable ISO -> QEMU smoke boot. Tags (v*) publish a release with the
+# ISO attached; manual dispatch uploads it as a workflow artifact only.
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux/archlinux:latest
+      # generation.sh needs userns + overlay mounts inside the container
+      options: --privileged
+    steps:
+      - name: Prepare arch
+        run: |
+          pacman-key --init
+          pacman --noconfirm -Sy archlinux-keyring
+          pacman --noconfirm -Syu git meson ninja gcc pkgconf boost boost-libs \
+            openssl libsodium libarchive brotli zstd libblake3 nlohmann-json \
+            sqlite curl libseccomp grub xorriso mtools qemu-base github-cli
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Build store libs
+        run: ./build.sh
+      - name: Bootstrap base generation
+        # stdout's last line is exactly the base store path
+        run: |
+          arch/bootstrap.sh build/archstore | tee build/bootstrap.out
+          tail -n1 build/bootstrap.out > build/base-path
+      - name: Build ISO
+        run: arch/iso/mkiso.sh build/archstore "$(cat build/base-path)"
+      - name: Boot test
+        run: arch/tests/boot-test.sh
+      - name: Checksum
+        run: sha256sum build/nixarch.iso > build/nixarch.iso.sha256
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: nixarch-iso
+          path: |
+            build/nixarch.iso
+            build/nixarch.iso.sha256
+            build/serial.log
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            build/nixarch.iso build/nixarch.iso.sha256 \
+            --title "nixarch ISO $GITHUB_REF_NAME" --generate-notes
