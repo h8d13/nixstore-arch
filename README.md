@@ -1,4 +1,6 @@
-# nixstore
+# archinix
+
+## [Nixstore](src/)
 
 Nix store layer (libnixutil, libnixstore + C API) extracted from [NixOS/nix](https://github.com/NixOS/nix) 2.36.0 (`40f375fa`), buildable on any Linux without Nix: `./build.sh`.
 
