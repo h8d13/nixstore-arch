@@ -1,6 +1,5 @@
 #include "nix/store/local-store.hh"
 #include "nix/store/globals.hh"
-#include "nix/util/git.hh"
 #include "nix/util/archive.hh"
 #include "nix/store/pathlocks.hh"
 #include "nix/store/references.hh"
@@ -943,9 +942,6 @@ void LocalStore::addToStore(const ValidPathInfo & info, Source & source, RepairF
                             h = caSink.finish().hash;
                             break;
                         }
-                        case FileIngestionMethod::Git:
-                            h = git::dumpHash(specified.hash.algo, sourcePath).hash;
-                            break;
                         }
                         ContentAddress{
                             .method = specified.method,
@@ -1572,10 +1568,6 @@ StorePath LocalStore::addToStoreFromDump(
                         fileHashes,
                         &linksDir);
                     break;
-                case FileIngestionMethod::Git:
-                    // doesn't correspond to serialization method, so
-                    // this should be unreachable
-                    assert(false);
                 }
             } else {
                 /* Move the temporary path we restored above. */

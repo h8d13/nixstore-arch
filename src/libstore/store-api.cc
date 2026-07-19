@@ -7,7 +7,6 @@
 #include "nix/util/thread-pool.hh"
 #include "nix/util/archive.hh"
 #include "nix/util/callback.hh"
-#include "nix/util/git.hh"
 #include "nix/util/source-accessor.hh"
 #include "nix/util/signals.hh"
 #include "nix/util/environment-variables.hh"
@@ -176,10 +175,6 @@ StorePath Store::addToStore(
     case FileIngestionMethod::NixArchive:
         fsm = FileSerialisationMethod::NixArchive;
         break;
-    case FileIngestionMethod::Git:
-        // Use NAR; Git is not a serialization method
-        fsm = FileSerialisationMethod::NixArchive;
-        break;
     }
     std::optional<StorePath> storePath;
     auto sink = sourceToSink([&](Source & source) {
@@ -315,7 +310,7 @@ ValidPathInfo Store::addToStoreSlow(
     NullFileSystemObjectSink blank;
     auto & parseSink = method.getFileIngestionMethod() == FileIngestionMethod::Flat
                            ? (FileSystemObjectSink &) fileSink
-                           : (FileSystemObjectSink &) blank; // for recursive or git we do recursive
+                           : (FileSystemObjectSink &) blank; // for recursive we do recursive
 
     /* The information that flows from tapped (besides being replicated in
        narSink), is now put in parseSink. */
@@ -325,9 +320,9 @@ ValidPathInfo Store::addToStoreSlow(
        finish. */
     auto [narHash, narSize] = narHashSink.finish();
 
-    auto hash = method == ContentAddressMethod::Raw::NixArchive && hashAlgo == HashAlgorithm::SHA256 ? narHash
-                : method == ContentAddressMethod::Raw::Git ? git::dumpHash(hashAlgo, srcPath).hash
-                                                           : caHashSink.finish().hash;
+    auto hash = method == ContentAddressMethod::Raw::NixArchive && hashAlgo == HashAlgorithm::SHA256
+                    ? narHash
+                    : caHashSink.finish().hash;
 
     if (expectedCAHash && expectedCAHash != hash)
         throw Error("hash mismatch for '%s'", srcPath);

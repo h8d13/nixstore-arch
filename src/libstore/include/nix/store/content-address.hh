@@ -51,17 +51,6 @@ struct ContentAddressMethod
         NixArchive,
 
         /**
-         * Calculate a store path using the `FileIngestionMethod::Git`
-         * hash of the file system objects, and references.
-         *
-         * Part of `ExperimentalFeature::GitHashing`.
-         *
-         * See `store-object/content-address.md#method-git` in the
-         * manual.
-         */
-        Git,
-
-        /**
          * Calculate a store path using the `FileIngestionMethod::Flat`
          * hash of the file system objects, and references, but in a
          * different way than `ContentAddressMethod::Raw::Flat`.

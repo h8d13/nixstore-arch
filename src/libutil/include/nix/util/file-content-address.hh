@@ -103,16 +103,6 @@ enum struct FileIngestionMethod : uint8_t {
      * manual.
      */
     NixArchive,
-
-    /**
-     * Git hashing.
-     *
-     * Part of `ExperimentalFeature::GitHashing`.
-     *
-     * See `file-system-object/content-address.md#serial-git` in the
-     * manual.
-     */
-    Git,
 };
 
 /**
@@ -120,7 +110,6 @@ enum struct FileIngestionMethod : uint8_t {
  *
  *  - `flat`: `FileIngestionMethod::Flat`
  *  - `nar`: `FileIngestionMethod::NixArchive`
- *  - `git`: `FileIngestionMethod::Git`
  *
  * Opposite of `renderFileIngestionMethod`.
  */

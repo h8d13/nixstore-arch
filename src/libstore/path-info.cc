@@ -62,7 +62,6 @@ std::optional<ContentAddressWithReferences> ValidPathInfo::contentAddressWithRef
 
     case ContentAddressMethod::Raw::Flat:
     case ContentAddressMethod::Raw::NixArchive:
-    case ContentAddressMethod::Raw::Git:
     default: {
         auto refs = references;
         bool hasSelfReference = false;

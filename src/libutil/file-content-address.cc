@@ -1,6 +1,5 @@
 #include "nix/util/file-content-address.hh"
 #include "nix/util/archive.hh"
-#include "nix/util/git.hh"
 #include "nix/util/source-path.hh"
 
 namespace nix {
@@ -27,15 +26,11 @@ FileSerialisationMethod parseFileSerialisationMethod(std::string_view input)
 
 FileIngestionMethod parseFileIngestionMethod(std::string_view input)
 {
-    if (input == "git") {
-        return FileIngestionMethod::Git;
-    } else {
-        auto ret = parseFileSerialisationMethodOpt(input);
-        if (ret)
-            return static_cast<FileIngestionMethod>(*ret);
-        else
-            throw UsageError("Unknown file ingestion method '%s', expect `flat`, `nar`, or `git`", input);
-    }
+    auto ret = parseFileSerialisationMethodOpt(input);
+    if (ret)
+        return static_cast<FileIngestionMethod>(*ret);
+    else
+        throw UsageError("Unknown file ingestion method '%s', expect `flat` or `nar`", input);
 }
 
 std::string_view renderFileSerialisationMethod(FileSerialisationMethod method)
@@ -56,8 +51,6 @@ std::string_view renderFileIngestionMethod(FileIngestionMethod method)
     case FileIngestionMethod::Flat:
     case FileIngestionMethod::NixArchive:
         return renderFileSerialisationMethod(static_cast<FileSerialisationMethod>(method));
-    case FileIngestionMethod::Git:
-        return "git";
     default:
         unreachable();
     }
@@ -103,8 +96,6 @@ hashPath(const SourcePath & path, FileIngestionMethod method, HashAlgorithm ht, 
         auto res = hashPath(path, (FileSerialisationMethod) method, ht, filter);
         return {res.hash, res.numBytesDigested};
     }
-    case FileIngestionMethod::Git:
-        return {git::dumpHash(ht, path, filter).hash, std::nullopt};
     }
     assert(false);
 }

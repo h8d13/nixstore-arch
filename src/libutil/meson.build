@@ -106,7 +106,6 @@ sources = [ config_priv_h ] + files(
   'file-descriptor.cc',
   'file-system.cc',
   'fs-sink.cc',
-  'git.cc',
   'hash.cc',
   'json-utils.cc',
   'logging.cc',
