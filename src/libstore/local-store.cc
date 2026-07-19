@@ -7,7 +7,6 @@
 #include "nix/util/callback.hh"
 #include "nix/util/topo-sort.hh"
 #include "nix/util/finally.hh"
-#include "nix/util/compression.hh"
 #include "nix/util/signals.hh"
 #include "nix/store/posix-fs-canonicalise.hh"
 #include "nix/util/source-accessor.hh"

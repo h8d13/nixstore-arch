@@ -24,7 +24,7 @@ needed() {
 }
 
 STORE_WANT="ld-linux-x86-64 libboost_url libc libgcc_s libnixutil libsqlite3 libstdc++ "
-UTIL_WANT="ld-linux-x86-64 libarchive libblake3 libboost_context libboost_iostreams libboost_url libbrotlidec libbrotlienc libc libcrypto libgcc_s libm libsodium libstdc++ libzstd "
+UTIL_WANT="ld-linux-x86-64 libblake3 libboost_context libboost_iostreams libboost_url libc libcrypto libgcc_s libm libsodium libstdc++ "
 
 got=$(needed "$P"/libnixstore.so.[0-9]*)
 [ "$got" = "$STORE_WANT" ]

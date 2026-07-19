@@ -75,26 +75,8 @@ openssl = dependency(
 )
 deps_private += openssl
 
-libarchive = dependency('libarchive', version : '>= 3.1.2')
-deps_public += libarchive
-if get_option('default_library') == 'static'
-  # Workaround until https://github.com/libarchive/libarchive/issues/1446 is fixed
-  add_project_arguments('-lz', language : 'cpp')
-endif
-
 sodium = dependency('libsodium', 'sodium')
 deps_private += sodium
-
-brotli = [
-  dependency('libbrotlicommon'),
-  dependency('libbrotlidec'),
-  dependency('libbrotlienc'),
-]
-deps_private += brotli
-
-# Direct libzstd linkage for ZstdMultiFrameCompressionSink.
-zstd = dependency('libzstd', version : '>= 1.4.0')
-deps_private += zstd
 
 cpuid_required = get_option('cpuid')
 if host_machine.cpu_family() != 'x86_64' and cpuid_required.enabled()
@@ -130,9 +112,6 @@ sources = [ config_priv_h ] + files(
   'caching-source-accessor.cc',
   'canon-path.cc',
   'checked-arithmetic.cc',
-  'compression-algo.cc',
-  'compression-settings.cc',
-  'compression.cc',
   'compute-levels.cc',
   'config-global.cc',
   'configuration.cc',
@@ -170,7 +149,6 @@ sources = [ config_priv_h ] + files(
   'strings.cc',
   'suggestions.cc',
   'table.cc',
-  'tarfile.cc',
   'tee-logger.cc',
   'terminal.cc',
   'thread-pool.cc',

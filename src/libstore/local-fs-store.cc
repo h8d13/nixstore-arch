@@ -1,6 +1,5 @@
 #include "nix/store/store-api.hh"
 #include "nix/store/local-fs-store.hh"
-#include "nix/util/compression.hh"
 
 namespace nix {
 
