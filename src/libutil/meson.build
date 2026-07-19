@@ -78,19 +78,6 @@ deps_private += openssl
 sodium = dependency('libsodium', 'sodium')
 deps_private += sodium
 
-cpuid_required = get_option('cpuid')
-if host_machine.cpu_family() != 'x86_64' and cpuid_required.enabled()
-  warning('Force-enabling seccomp on non-x86_64 does not make sense')
-endif
-cpuid = dependency(
-  'libcpuid',
-  'cpuid',
-  version : '>= 0.7.0',
-  required : cpuid_required,
-)
-configdata_priv.set('HAVE_LIBCPUID', cpuid.found().to_int())
-deps_private += cpuid
-
 nlohmann_json = dependency('nlohmann_json', version : '>= 3.9')
 deps_public += nlohmann_json
 
@@ -109,14 +96,11 @@ sources = [ config_priv_h ] + files(
   'base-n.cc',
   'base-nix-32.cc',
   'bump-memory-resource.cc',
-  'caching-source-accessor.cc',
   'canon-path.cc',
   'checked-arithmetic.cc',
-  'compute-levels.cc',
   'config-global.cc',
   'configuration.cc',
   'current-process.cc',
-  'english.cc',
   'environment-variables.cc',
   'error.cc',
   'executable-path.cc',
@@ -128,15 +112,9 @@ sources = [ config_priv_h ] + files(
   'fs-sink.cc',
   'git.cc',
   'hash.cc',
-  'hilite.cc',
   'json-utils.cc',
   'logging.cc',
   'memory-source-accessor.cc',
-  'memory-source-accessor/json.cc',
-  'mounted-source-accessor.cc',
-  'nar-accessor.cc',
-  'nar-cache.cc',
-  'nar-listing.cc',
   'pos-table.cc',
   'position.cc',
   'posix-source-accessor.cc',
@@ -148,16 +126,13 @@ sources = [ config_priv_h ] + files(
   'source-path.cc',
   'strings.cc',
   'suggestions.cc',
-  'table.cc',
   'tee-logger.cc',
   'terminal.cc',
   'thread-pool.cc',
-  'union-source-accessor.cc',
   'unix-domain-socket.cc',
   'url.cc',
   'users.cc',
   'util.cc',
-  'xml-writer.cc',
 )
 
 subdir('include/nix/util')

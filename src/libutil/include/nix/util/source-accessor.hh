@@ -298,16 +298,4 @@ ref<SourceAccessor> getFSSourceAccessor();
 ref<SourceAccessor> makeFSSourceAccessor(
     std::filesystem::path root, bool trackLastModified = false, FinalSymlink finalSymlink = FinalSymlink::DontFollow);
 
-/**
- * Construct an accessor that presents a "union" view of a vector of
- * underlying accessors. Earlier accessors take precedence over later.
- */
-ref<SourceAccessor> makeUnionSourceAccessor(std::vector<ref<SourceAccessor>> && accessors);
-
-/**
- * Make a wrapper source accessor that caches positive lookup results.
- * Useful for the evaluator which already assumes a mostly immutable view of the filesystem.
- */
-ref<SourceAccessor> makeCachingSourceAccessor(ref<SourceAccessor> next);
-
 } // namespace nix
