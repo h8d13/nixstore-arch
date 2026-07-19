@@ -57,16 +57,14 @@ COMMANDS
               Ownership/mode deltas appear as the etc/nixgen/perms
               diff.
 
-       nixgen-send <name|id>... > bundle
-              Stream committed generations in export wire format
-              (nix-store --export compatible), re-hashed against the
-              db on the way out so local corruption cannot spread.
-              Pipe to ssh for box-to-box shipping.
-
-       nixgen-recv < bundle
-              Receive a bundle: CA-verified import (content must hash
-              back to its claimed store path), dedup, GRUB entry per
-              generation that carries a kernel. Idempotent.
+       Box-to-box shipping has no verb: the primitives are installed.
+       export-path re-hashes against the db so local corruption cannot
+       spread; import-path refuses content that does not hash back to
+       its claimed store path and dedups on arrival:
+              export-path /nixstoredev <basename>... > bundle
+              import-path /nixstoredev < bundle
+       A received kernel boots once entries.cfg carries its menuentry
+       (same shape nixgen-commit appends).
 
        nixgen-setup <device> [name]
               Install onto a disk from inside the box: GPT (ESP +
