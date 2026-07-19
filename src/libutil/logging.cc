@@ -4,7 +4,6 @@
 #include "nix/util/terminal.hh"
 #include "nix/util/util.hh"
 #include "nix/util/config-global.hh"
-#include "nix/util/position.hh"
 #include "nix/util/sync.hh"
 #include "nix/util/unix-domain-socket.hh"
 
@@ -202,21 +201,6 @@ Activity::Activity(
     logger.startActivity(id, lvl, type, s, fields, parent);
 }
 
-void to_json(nlohmann::json & json, std::shared_ptr<const Pos> pos)
-{
-    if (pos) {
-        json["line"] = pos->line;
-        json["column"] = pos->column;
-        std::ostringstream str;
-        pos->print(str, true);
-        json["file"] = str.str();
-    } else {
-        json["line"] = nullptr;
-        json["column"] = nullptr;
-        json["file"] = nullptr;
-    }
-}
-
 namespace {
 
 struct JSONLogger : Logger
@@ -296,14 +280,12 @@ struct JSONLogger : Logger
         json["level"] = ei.level;
         json["msg"] = oss.str();
         json["raw_msg"] = ei.msg.str();
-        to_json(json, ei.pos);
 
         if (loggerSettings.showTrace.get() && !ei.traces.empty()) {
             nlohmann::json traces = nlohmann::json::array();
             for (auto iter = ei.traces.rbegin(); iter != ei.traces.rend(); ++iter) {
                 nlohmann::json stackFrame;
                 stackFrame["raw_msg"] = iter->hint.str();
-                to_json(stackFrame, iter->pos);
                 traces.push_back(stackFrame);
             }
 

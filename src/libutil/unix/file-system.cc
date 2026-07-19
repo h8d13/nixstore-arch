@@ -182,9 +182,9 @@ static void _deletePath(
             try {
                 unix::fchmodatTryNoFollow(parentfd, name, st.st_mode | PERM_MASK);
             } catch (SysError & e) {
-                e.addTrace({}, "while making directory %1% accessible for deletion", PathFmt(path));
+                e.addTrace("while making directory %1% accessible for deletion", PathFmt(path));
                 if (e.errNo == EOPNOTSUPP)
-                    e.addTrace({}, "%1% is now a symlink, expected directory", PathFmt(path));
+                    e.addTrace("%1% is now a symlink, expected directory", PathFmt(path));
                 throw;
             }
 

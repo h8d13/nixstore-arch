@@ -47,7 +47,6 @@ namespace nix {
  * and adds them to the `settings` map.
  */
 
-class Args;
 class AbstractSetting;
 
 class AbstractConfig
@@ -107,12 +106,6 @@ public:
      */
     virtual std::string toKeyValue() = 0;
 
-    /**
-     * Converts settings to `Args` to be used on the command line interface
-     * - args: args to write to
-     * - category: category of the settings
-     */
-    virtual void convertToArgs(Args & args, const std::string & category) = 0;
 
     /**
      * Logs a warning for each unregistered setting
@@ -178,7 +171,6 @@ public:
 
     std::string toKeyValue() override;
 
-    void convertToArgs(Args & args, const std::string & category) override;
 };
 
 class AbstractSetting
@@ -223,7 +215,6 @@ protected:
 
     virtual std::map<std::string, nlohmann::json> toJSONObject() const;
 
-    virtual void convertToArg(Args & args, const std::string & category);
 };
 
 /**
@@ -440,7 +431,6 @@ public:
 
     std::string to_string() const override;
 
-    void convertToArg(Args & args, const std::string & category) override;
 
     std::map<std::string, nlohmann::json> toJSONObject() const override;
 };

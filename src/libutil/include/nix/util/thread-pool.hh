@@ -6,6 +6,7 @@
 #include "nix/util/sync.hh"
 
 #include <queue>
+#include <set>
 #include <functional>
 #include <thread>
 #include <map>

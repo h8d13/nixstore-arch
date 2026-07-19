@@ -264,7 +264,7 @@ UnkeyedValidPathInfo UnkeyedValidPathInfo::fromJSON(const StoreDirConfig * store
                 format == PathInfoJsonFormat::V1 ? store->parseStorePath(getString(input))
                                                  : static_cast<StorePath>(input));
     } catch (Error & e) {
-        e.addTrace({}, "while reading key 'references'");
+        e.addTrace("while reading key 'references'");
         throw;
     }
 
@@ -276,7 +276,7 @@ UnkeyedValidPathInfo UnkeyedValidPathInfo::fromJSON(const StoreDirConfig * store
             res.ca = ptrToOwned<ContentAddress>(getNullable(valueAt(json, "ca")));
         }
     } catch (Error & e) {
-        e.addTrace({}, "while reading key 'ca'");
+        e.addTrace("while reading key 'ca'");
         throw;
     }
 

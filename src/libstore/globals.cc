@@ -5,7 +5,6 @@
 #include "nix/util/current-process.hh"
 #include "nix/util/executable-path.hh"
 #include "nix/util/file-system.hh"
-#include "nix/util/args.hh"
 #include "nix/util/abstract-setting-to-json.hh"
 #include "nix/util/executable-path.hh"
 

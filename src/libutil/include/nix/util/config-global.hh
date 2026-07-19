@@ -24,7 +24,6 @@ public:
 
     std::string toKeyValue() override;
 
-    void convertToArgs(Args & args, const std::string & category) override;
 
     struct Register
     {

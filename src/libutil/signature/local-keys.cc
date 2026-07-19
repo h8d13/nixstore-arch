@@ -91,7 +91,7 @@ Key::Key(std::string_view s, bool sensitiveValue)
         std::string extra;
         if (!sensitiveValue)
             extra = fmt(" with raw value '%s'", s);
-        e.addTrace({}, "while decoding key named '%s'%s", name, extra);
+        e.addTrace("while decoding key named '%s'%s", name, extra);
         throw;
     }
 }

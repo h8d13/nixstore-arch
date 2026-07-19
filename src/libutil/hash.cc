@@ -5,7 +5,6 @@
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 
-#include "nix/util/args.hh"
 #include "nix/util/hash.hh"
 #include "nix/util/configuration.hh"
 #include "nix/util/split.hh"
@@ -157,7 +156,7 @@ static Hash parseLowLevel(
     try {
         d = pair.decode(rest);
     } catch (Error & e) {
-        e.addTrace({}, "While decoding hash '%s'", rest);
+        e.addTrace("While decoding hash '%s'", rest);
     }
     if (d.size() != res.hashSize)
         throw BadHash(

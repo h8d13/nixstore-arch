@@ -14,7 +14,6 @@
 
 #include "nix/util/util.hh"
 #include "nix/util/configuration.hh"
-#include "nix/util/args.hh"
 #include "nix/util/logging.hh"
 #include "nix/util/file-path.hh"
 
@@ -86,40 +85,6 @@ void BaseSetting<T>::set(const std::string & str, bool append)
             name,
             showExperimentalFeature(*experimentalFeature));
     }
-}
-
-template<>
-void BaseSetting<bool>::convertToArg(Args & args, const std::string & category);
-
-template<typename T>
-void BaseSetting<T>::convertToArg(Args & args, const std::string & category)
-{
-    args.addFlag({
-        .longName = name,
-        .aliases = aliases,
-        .description = fmt("Set the `%s` setting.", name),
-        .category = category,
-        .labels = {"value"},
-        .handler = {[this](std::string s) {
-            overridden = true;
-            set(s);
-        }},
-        .experimentalFeature = experimentalFeature,
-    });
-
-    if (isAppendable())
-        args.addFlag({
-            .longName = "extra-" + name,
-            .aliases = aliases,
-            .description = fmt("Append to the `%s` setting.", name),
-            .category = category,
-            .labels = {"value"},
-            .handler = {[this](std::string s) {
-                overridden = true;
-                set(s, true);
-            }},
-            .experimentalFeature = experimentalFeature,
-        });
 }
 
 NIX_DECLARE_CONFIG_SERIALISER(std::string)

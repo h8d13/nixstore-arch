@@ -170,7 +170,7 @@ SourcePath MemorySourceAccessor::addFile(CanonPath path, std::string && contents
         if (!f)
             throw Error("file '%s' cannot be created because some parent directories don't exist", showPath(path));
     } catch (SourceAccessorError & e) {
-        e.addTrace({}, "while creating file '%s'", showPath(path));
+        e.addTrace("while creating file '%s'", showPath(path));
         throw;
     }
     if (auto * r = std::get_if<File::Regular>(&f->raw))
@@ -192,7 +192,7 @@ void MemorySink::createDirectory(const CanonPath & path)
             throw Error(
                 "directory '%s' cannot be created because some parent directories don't exist", dst.showPath(path));
     } catch (SourceAccessorError & e) {
-        e.addTrace({}, "while creating directory '%s'", dst.showPath(path));
+        e.addTrace("while creating directory '%s'", dst.showPath(path));
         throw;
     }
     if (!std::holds_alternative<File::Directory>(f->raw))
@@ -221,7 +221,7 @@ void MemorySink::createRegularFile(const CanonPath & path, fun<void(CreateRegula
         if (!f)
             throw Error("file '%s' cannot be created because some parent directories don't exist", dst.showPath(path));
     } catch (SourceAccessorError & e) {
-        e.addTrace({}, "while creating regular file '%s'", dst.showPath(path));
+        e.addTrace("while creating regular file '%s'", dst.showPath(path));
         throw;
     }
     if (auto * rp = std::get_if<File::Regular>(&f->raw)) {
@@ -257,7 +257,7 @@ void MemorySink::createSymlink(const CanonPath & path, const std::string & targe
             throw Error(
                 "symlink '%s' cannot be created because some parent directories don't exist", dst.showPath(path));
     } catch (SourceAccessorError & e) {
-        e.addTrace({}, "while creating symlink '%s'", dst.showPath(path));
+        e.addTrace("while creating symlink '%s'", dst.showPath(path));
         throw;
     }
     if (auto * s = std::get_if<File::Symlink>(&f->raw))

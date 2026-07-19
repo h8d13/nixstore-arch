@@ -15,7 +15,6 @@
  * See libutil/tests/logging.cc for usage examples.
  */
 
-#include "nix/util/suggestions.hh"
 #include "nix/util/fmt.hh"
 #include "nix/util/fun.hh"
 #include "nix/util/config.hh"
@@ -36,28 +35,6 @@ namespace nix {
 typedef enum { lvlError = 0, lvlWarn, lvlNotice, lvlInfo, lvlTalkative, lvlChatty, lvlDebug, lvlVomit } Verbosity;
 
 /**
- * The lines of code surrounding an error.
- */
-struct LinesOfCode
-{
-    std::optional<std::string> prevLineOfCode;
-    std::optional<std::string> errLineOfCode;
-    std::optional<std::string> nextLineOfCode;
-};
-
-/* NOTE: position.hh recursively depends on source-path.hh -> source-accessor.hh
-   -> hash.hh -> configuration.hh -> experimental-features.hh -> error.hh -> Pos.
-   There are other such cycles.
-   Thus, Pos has to be an incomplete type in this header. But since ErrorInfo/Trace
-   have to refer to Pos, they have to use pointer indirection via std::shared_ptr
-   to break the recursive header dependency.
-   FIXME: Untangle this mess. Should there be AbstractPos as there used to be before
-   4feb7d9f71? */
-struct Pos;
-
-void printCodeLines(std::ostream & out, const std::string & prefix, const Pos & errPos, const LinesOfCode & loc);
-
-/**
  * When a stack frame is printed.
  */
 enum struct TracePrint {
@@ -71,7 +48,6 @@ enum struct TracePrint {
 
 struct Trace
 {
-    std::shared_ptr<const Pos> pos;
     HintFmt hint;
     TracePrint print = TracePrint::Default;
 };
@@ -82,7 +58,6 @@ struct ErrorInfo
 {
     Verbosity level;
     HintFmt msg;
-    std::shared_ptr<const Pos> pos;
     std::list<Trace> traces;
     /**
      * Some messages are generated directly by expressions; notably `builtins.warn`, `abort`, `throw`.
@@ -94,8 +69,6 @@ struct ErrorInfo
      * Exit status.
      */
     unsigned int status = 1;
-
-    Suggestions suggestions;
 
     static std::optional<std::string> programName;
 };
@@ -131,24 +104,18 @@ public:
 
     template<typename... Args>
     BaseError(unsigned int status, Args &&... args)
-        : err{.level = lvlError, .msg = HintFmt(std::forward<Args>(args)...), .pos = {}, .status = status}
+        : err{.level = lvlError, .msg = HintFmt(std::forward<Args>(args)...), .status = status}
     {
     }
 
     template<typename... Args>
     explicit BaseError(const std::string & fs, Args &&... args)
-        : err{.level = lvlError, .msg = HintFmt(fs, std::forward<Args>(args)...), .pos = {}}
-    {
-    }
-
-    template<typename... Args>
-    BaseError(const Suggestions & sug, Args &&... args)
-        : err{.level = lvlError, .msg = HintFmt(std::forward<Args>(args)...), .pos = {}, .suggestions = sug}
+        : err{.level = lvlError, .msg = HintFmt(fs, std::forward<Args>(args)...)}
     {
     }
 
     BaseError(HintFmt hint)
-        : err{.level = lvlError, .msg = hint, .pos = {}}
+        : err{.level = lvlError, .msg = hint}
     {
     }
 
@@ -189,13 +156,6 @@ public:
         err.status = status;
     }
 
-    void atPos(std::shared_ptr<const Pos> pos)
-    {
-        err.pos = pos;
-    }
-
-    bool hasPos() const;
-
     void pushTrace(Trace trace)
     {
         err.traces.push_front(trace);
@@ -204,24 +164,22 @@ public:
     /**
      * Prepends an item to the error trace, as is usual for extra context.
      *
-     * @param pos Nullable source position to put in trace item
      * @param fs Format string, see `HintFmt`
      * @param args... Format string arguments.
      */
     template<typename... Args>
-    void addTrace(std::shared_ptr<const Pos> && pos, std::string_view fs, Args &&... args)
+    void addTrace(std::string_view fs, Args &&... args)
     {
-        addTrace(std::move(pos), HintFmt(std::string(fs), std::forward<Args>(args)...));
+        addTrace(HintFmt(std::string(fs), std::forward<Args>(args)...));
     }
 
     /**
      * Prepends an item to the error trace, as is usual for extra context.
      *
-     * @param pos Nullable source position to put in trace item
      * @param hint Formatted error message
      * @param print Optional, whether to always print (used by `addErrorContext`)
      */
-    void addTrace(std::shared_ptr<const Pos> && pos, HintFmt hint, TracePrint print = TracePrint::Default);
+    void addTrace(HintFmt hint, TracePrint print = TracePrint::Default);
 
     bool hasTrace() const
     {

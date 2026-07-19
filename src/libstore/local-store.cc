@@ -226,7 +226,6 @@ LocalStore::LocalStore(ref<const Config> config)
         } catch (SystemError & e) {
             if (e.is(std::errc::permission_denied) || e.is(std::errc::operation_not_permitted)) {
                 e.addTrace(
-                    {},
                     "This command may have been run as non-root in a single-user Nix installation,\n"
                     "or the Nix daemon may have crashed.");
             }
@@ -405,7 +404,6 @@ void LocalStore::deleteStorePath(const std::filesystem::path & path, uint64_t & 
                      e.info().msg)});
         } else {
             e.addTrace(
-                {},
                 isKnownPath ? "While deleting store path %1%" : "While deleting garbage in store directory %1%",
                 PathFmt(path));
             throw;

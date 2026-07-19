@@ -92,7 +92,6 @@ subdir('nix-meson-build-support/common')
 
 sources = [ config_priv_h ] + files(
   'archive.cc',
-  'args.cc',
   'base-n.cc',
   'base-nix-32.cc',
   'bump-memory-resource.cc',
@@ -115,8 +114,6 @@ sources = [ config_priv_h ] + files(
   'json-utils.cc',
   'logging.cc',
   'memory-source-accessor.cc',
-  'pos-table.cc',
-  'position.cc',
   'posix-source-accessor.cc',
   'processes.cc',
   'serialise.cc',
@@ -125,7 +122,6 @@ sources = [ config_priv_h ] + files(
   'source-accessor.cc',
   'source-path.cc',
   'strings.cc',
-  'suggestions.cc',
   'tee-logger.cc',
   'terminal.cc',
   'thread-pool.cc',

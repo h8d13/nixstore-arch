@@ -1,5 +1,4 @@
 #include "nix/util/configuration.hh"
-#include "nix/util/args.hh"
 #include "nix/util/abstract-setting-to-json.hh"
 #include "nix/util/environment-variables.hh"
 #include "nix/util/experimental-features.hh"
@@ -221,14 +220,6 @@ std::string Config::toKeyValue()
     return res;
 }
 
-void Config::convertToArgs(Args & args, const std::string & category)
-{
-    for (auto & s : _settings) {
-        if (!s.second.isAlias)
-            s.second.setting->convertToArg(args, category);
-    }
-}
-
 AbstractSetting::AbstractSetting(
     const std::string & name,
     const std::string & description,
@@ -264,8 +255,6 @@ std::map<std::string, nlohmann::json> AbstractSetting::toJSONObject() const
         obj.emplace("experimentalFeature", nullptr);
     return obj;
 }
-
-void AbstractSetting::convertToArg(Args & args, const std::string & category) {}
 
 bool AbstractSetting::isOverridden() const
 {
@@ -314,27 +303,6 @@ template<>
 std::string BaseSetting<bool>::to_string() const
 {
     return value ? "true" : "false";
-}
-
-template<>
-void BaseSetting<bool>::convertToArg(Args & args, const std::string & category)
-{
-    args.addFlag({
-        .longName = name,
-        .aliases = aliases,
-        .description = fmt("Enable the `%s` setting.", name),
-        .category = category,
-        .handler = {[this] { override(true); }},
-        .experimentalFeature = experimentalFeature,
-    });
-    args.addFlag({
-        .longName = "no-" + name,
-        .aliases = aliases,
-        .description = fmt("Disable the `%s` setting.", name),
-        .category = category,
-        .handler = {[this] { override(false); }},
-        .experimentalFeature = experimentalFeature,
-    });
 }
 
 template<>

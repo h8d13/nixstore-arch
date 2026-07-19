@@ -53,12 +53,6 @@ std::string GlobalConfig::toKeyValue()
     return res;
 }
 
-void GlobalConfig::convertToArgs(Args & args, const std::string & category)
-{
-    for (auto & config : configRegistrations())
-        config->convertToArgs(args, category);
-}
-
 GlobalConfig globalConfig;
 
 GlobalConfig::Register::Register(Config * config)

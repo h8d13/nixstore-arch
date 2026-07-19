@@ -262,7 +262,7 @@ void writeFile(Descriptor fd, std::string_view s, FsSync sync, const std::filesy
             syncDescriptor(fd);
 
     } catch (Error & e) {
-        e.addTrace({}, "writing file %1%", origPath ? PathFmt(*origPath) : PathFmt(descriptorToPath(fd)));
+        e.addTrace("writing file %1%", origPath ? PathFmt(*origPath) : PathFmt(descriptorToPath(fd)));
         throw;
     }
 }
@@ -291,7 +291,7 @@ void writeFile(const std::filesystem::path & path, Source & source, mode_t mode,
             }
         }
     } catch (Error & e) {
-        e.addTrace({}, "writing file %s", PathFmt(path));
+        e.addTrace("writing file %s", PathFmt(path));
         throw;
     }
     if (sync == FsSync::Yes)

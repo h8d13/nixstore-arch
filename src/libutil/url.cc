@@ -255,7 +255,7 @@ try {
 
     return ret;
 } catch (BadURL & e) {
-    e.addTrace({}, "while resolving possibly-relative url '%s' against base URL '%s'", urlS, base);
+    e.addTrace("while resolving possibly-relative url '%s' against base URL '%s'", urlS, base);
     throw;
 }
 

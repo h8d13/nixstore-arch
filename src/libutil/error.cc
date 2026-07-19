@@ -5,7 +5,8 @@
 #include "nix/util/exit.hh"
 #include "nix/util/signals.hh"
 #include "nix/util/terminal.hh"
-#include "nix/util/position.hh"
+#include "nix/util/util.hh"
+#include "nix/util/file-system.hh"
 
 #include <cinttypes>
 #include <iostream>
@@ -26,9 +27,9 @@ void SystemError::anchor() {}
 
 void SysError::anchor() {}
 
-void BaseError::addTrace(std::shared_ptr<const Pos> && e, HintFmt hint, TracePrint print)
+void BaseError::addTrace(HintFmt hint, TracePrint print)
 {
-    err.traces.push_front(Trace{.pos = std::move(e), .hint = hint, .print = print});
+    err.traces.push_front(Trace{.hint = hint, .print = print});
 }
 
 void throwExceptionSelfCheck()
@@ -54,11 +55,6 @@ const std::string & BaseError::calcWhat() const
     return *what_;
 }
 
-bool BaseError::hasPos() const
-{
-    return err.pos.get() && *err.pos.get();
-}
-
 std::optional<std::string> ErrorInfo::programName = std::nullopt;
 
 std::ostream & operator<<(std::ostream & os, const HintFmt & hf)
@@ -71,50 +67,10 @@ std::ostream & operator<<(std::ostream & os, const HintFmt & hf)
  */
 inline std::strong_ordering operator<=>(const Trace & lhs, const Trace & rhs)
 {
-    // `std::shared_ptr` does not have value semantics for its comparison
-    // functions, so we need to check for nulls and compare the dereferenced
-    // values here.
-    if (lhs.pos != rhs.pos) {
-        if (auto cmp = bool{lhs.pos} <=> bool{rhs.pos}; cmp != 0)
-            return cmp;
-        if (auto cmp = *lhs.pos <=> *rhs.pos; cmp != 0)
-            return cmp;
-    }
     // This formats a freshly formatted hint string and then throws it away, which
-    // shouldn't be much of a problem because it only runs when pos is equal, and this function is
-    // used for trace printing, which is infrequent.
+    // shouldn't be much of a problem because it only runs infrequently, for
+    // trace printing.
     return lhs.hint.str() <=> rhs.hint.str();
-}
-
-// print lines of code to the ostream, indicating the error column.
-void printCodeLines(std::ostream & out, const std::string & prefix, const Pos & errPos, const LinesOfCode & loc)
-{
-    // previous line of code.
-    if (loc.prevLineOfCode.has_value()) {
-        out << std::endl << fmt("%1% %|2$5d|| %3%", prefix, (errPos.line - 1), *loc.prevLineOfCode);
-    }
-
-    if (loc.errLineOfCode.has_value()) {
-        // line of code containing the error.
-        out << std::endl << fmt("%1% %|2$5d|| %3%", prefix, (errPos.line), *loc.errLineOfCode);
-        // error arrows for the column range.
-        if (errPos.column > 0) {
-            int start = errPos.column;
-            std::string spaces;
-            for (int i = 0; i < start; ++i) {
-                spaces.append(" ");
-            }
-
-            std::string arrows("^");
-
-            out << std::endl << fmt("%1%      |%2%" ANSI_RED "%3%" ANSI_NORMAL, prefix, spaces, arrows);
-        }
-    }
-
-    // next line of code.
-    if (loc.nextLineOfCode.has_value()) {
-        out << std::endl << fmt("%1% %|2$5d|| %3%", prefix, (errPos.line + 1), *loc.nextLineOfCode);
-    }
 }
 
 static std::string indent(std::string_view indentFirst, std::string_view indentRest, std::string_view s)
@@ -136,42 +92,9 @@ static std::string indent(std::string_view indentFirst, std::string_view indentR
     return res;
 }
 
-/**
- * A development aid for finding missing positions, to improve error messages. Example use:
- *
- *     _NIX_EVAL_SHOW_UNKNOWN_LOCATIONS=1 _NIX_TEST_ACCEPT=1 make tests/lang.sh.test
- *     git diff -U20 tests
- *
- */
-static bool printUnknownLocations = getEnv("_NIX_EVAL_SHOW_UNKNOWN_LOCATIONS").has_value();
-
-/**
- * Print a position, if it is known.
- *
- * @return true if a position was printed.
- */
-static bool printPosMaybe(std::ostream & oss, std::string_view indent, const std::shared_ptr<const Pos> & pos)
-{
-    bool hasPos = pos && *pos;
-    if (hasPos) {
-        oss << indent << ANSI_BLUE << "at " ANSI_WARNING << *pos << ANSI_NORMAL << ":";
-
-        if (auto loc = pos->getCodeLines()) {
-            printCodeLines(oss, "", *pos, *loc);
-            oss << "\n";
-        }
-    } else if (printUnknownLocations) {
-        oss << "\n" << indent << ANSI_BLUE << "at " ANSI_RED << "UNKNOWN LOCATION" << ANSI_NORMAL << "\n";
-    }
-    return hasPos;
-}
-
 static void printTrace(std::ostream & output, const std::string_view & indent, size_t & count, const Trace & trace)
 {
     output << "\n" << "… " << trace.hint.str() << "\n";
-
-    if (printPosMaybe(output, indent, trace.pos))
-        count++;
 }
 
 void printSkippedTracesMaybe(
@@ -422,13 +345,6 @@ std::ostream & showErrorInfo(std::ostream & out, const ErrorInfo & einfo, bool s
     }
 
     oss << einfo.msg << "\n";
-
-    printPosMaybe(oss, "", einfo.pos);
-
-    auto suggestions = einfo.suggestions.trim();
-    if (!suggestions.suggestions.empty()) {
-        oss << "Did you mean " << suggestions.trim() << "?" << std::endl;
-    }
 
     out << indent(prefix, std::string(filterANSIEscapes(prefix, true).size(), ' '), chomp(oss.str()));
 
