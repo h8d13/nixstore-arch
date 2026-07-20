@@ -94,18 +94,23 @@ cat > "$ISO/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=5
 
-menuentry "nixarch: $G1" {
+menuentry "nixarch ISO (read-only): $G1" {
 	linux /boot/vmlinuz-linux nixgen=$G1 nixlabel=$LABEL console=ttyS0,115200 console=tty0
 	initrd /boot/initramfs-linux.img
 }
 
 # generations committed from inside the box (nixgen-commit/-update) live
-# on the NIXSTORE disk; pull their entries into the top-level menu when
-# it's attached. Known cost: BIOS grub probing for an absent label takes
-# ~10s, paid on every diskless boot
+# on the NIXSTORE disk; pull their entries in when it's attached, under
+# a submenu so the ISO entry stays unmistakable at the top level. On
+# installed disks the same entries.cfg is top-level on purpose: there it
+# is the primary boot path. Known cost: BIOS grub probing for an absent
+# label takes ~10s, paid on every diskless boot
 search --no-floppy --set=nixdev --label NIXSTORE
 if [ -n "\$nixdev" ]; then
-	source (\$nixdev)/entries.cfg
+	submenu "generations on NIXSTORE disk ->" {
+		search --no-floppy --set=nixdev --label NIXSTORE
+		source (\$nixdev)/entries.cfg
+	}
 fi
 EOF
 
