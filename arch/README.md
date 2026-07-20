@@ -29,7 +29,7 @@ only lives in RAM and `checkupdates` equivalent is ran before `nixgen-update`
 | `iso/mkbootdisk.sh <store-root> [img] [MiB]` | standalone bootable disk image (UEFI, no ISO): GRUB ESP + seeded store partition |
 | `iso/flashdisk.sh <store-root> <device>` | one-shot flash: sizes image to the disk, builds, writes, fscks both partitions |
 | `uefi-vm.sh [disk\|iso\|clean]` | interactive QEMU on the real UEFI path (OVMF pflash, persistent NVRAM): flashable disk image or ISO |
-| `updev.sh` | in-place box update of `nixgen-*` scripts. Usually when changes are small enough |
+| `devup.sh` | in-place box update of `nixgen-*` scripts. Usually when changes are small enough |
 
 ## Tests
 
