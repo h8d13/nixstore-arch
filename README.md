@@ -36,8 +36,10 @@ generation offline, rollback is booting an older GRUB entry.
 Currently GRUB/Ext4 only.
 
 `nixgen-setup /dev/disk` installs current running generation to a hard disk.
+> [!NOTE]
+> The ISO needs a disk for persistence. Otherwise vanishes on reboot.
 
-In the box: `nixgen-{commit,update,switch,remove,listid,diffid,setup}`;
+Then, in the box: `nixgen-{commit,update,switch,remove,listid,diffid,setup}`;
 
 `nixgen-help` is the full reference.
 
