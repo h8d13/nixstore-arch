@@ -29,9 +29,14 @@ jobs:
         run: |
           pacman-key --init
           pacman --noconfirm -Sy archlinux-keyring
+          # build deps per src/*/meson.build, plus: curl+zstd for the
+          # bootstrap tarball, grub/xorriso/mtools for mkiso, gh for
+          # releases. libsodium/libarchive/brotli/libseccomp belonged
+          # to cut upstream subsystems (signing, fetchers, compression,
+          # build sandbox)
           pacman --noconfirm --needed -Syu git meson ninja gcc pkgconf boost boost-libs \
-            openssl libsodium libarchive brotli zstd libblake3 nlohmann-json \
-            sqlite curl libseccomp grub xorriso mtools github-cli
+            openssl zstd libblake3 nlohmann-json sqlite curl \
+            grub xorriso mtools github-cli
           # container root has no subuid range; without one bootstrap.sh
           # falls back to its single-uid sandbox and pacman hooks spam
           # fchownat EINVAL (chowns fail soft). Match the local multi-uid path
