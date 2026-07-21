@@ -1,0 +1,21 @@
+[Unit]
+Description=Bind the nixgen store into the new root
+DefaultDependencies=no
+AssertPathExists=/etc/initrd-release
+Requires=sysroot.mount
+After=sysroot.mount
+Before=initrd-fs.target
+# the binds are part of the root handed to switch-root: the cleanup
+# isolate must not stop this unit either
+IgnoreOnIsolate=yes
+Conflicts=shutdown.target
+Before=shutdown.target
+OnFailure=emergency.target
+OnFailureJobMode=replace-irreversibly
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nixgen-bind
+StandardOutput=journal+console
+StandardError=journal+console

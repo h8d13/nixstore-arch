@@ -1,0 +1,12 @@
+#!/usr/bin/ash
+# Bind the store into the tree that is about to become the real root, so
+# the booted system sees /nixstore (and /nixstoredev when a store disk is
+# attached). Both mountpoint dirs are baked into every generation by
+# setup-boot.sh; switch-root moves the whole /sysroot tree, submounts
+# included.
+mkdir -p /sysroot/nixstore
+mount -o bind /run/nixstore /sysroot/nixstore
+if mountpoint -q /run/nixstoredev; then
+	mkdir -p /sysroot/nixstoredev
+	mount -o bind /run/nixstoredev /sysroot/nixstoredev
+fi

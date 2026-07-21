@@ -36,10 +36,8 @@ update-test: every installed nixgen-* must appear in it).
 | `export-path <store-root> <basename>... > bundle` | stream generations in `nix-store --export` wire format; re-hashes against the db so local corruption cannot spread |
 | `import-path <store-root> < bundle` | receive a bundle on another machine + dedup; recomputes the CA store path from the received bytes, refuses mismatches |
 | `iso/mkiso.sh <store-root> <base>` | bootable ISO: squashed store + GRUB entry per generation |
-| `iso/mkstoredisk.sh [img] [size]` | blank ext4 disk (label NIXSTORE); attached, it persists committed generations |
-| `iso/mkbootdisk.sh <store-root> [img] [MiB]` | standalone bootable disk image (UEFI, no ISO): GRUB ESP + seeded store partition |
-| `iso/flashdisk.sh <store-root> <device>` | one-shot flash: sizes image to the disk, builds, writes, fscks both partitions |
-| `uefi-vm.sh [disk\|iso\|clean]` | interactive QEMU on the real UEFI path (OVMF pflash, persistent NVRAM): flashable disk image or ISO |
+| `iso/mkstoredisk.sh [img] [size] [fs]` | blank store disk (label NIXSTORE); attached, it persists committed generations |
+| `uefi-vm.sh [fresh\|keep\|boot\|iso\|clean]` | interactive QEMU on the real UEFI path (OVMF pflash, persistent NVRAM). Argless = the install workflow: ISO + one blank disk, `nixgen-setup /dev/vda`, then `boot` runs the result. `iso` swaps the blank disk for the NIXSTORE store disk (commit/update playground) |
 | `devup.sh` | in-place box update of `nixgen-*` scripts. Usually when changes are small enough |
 
 ## Tests
@@ -49,11 +47,16 @@ update-test: every installed nixgen-* must appear in it).
 | `tests/boot-test.sh` | headless QEMU smoke-boot of the ISO, PASS on autologin |
 | `tests/update-test.sh` | e2e: kernel upgrade in the box, boot the result from the store disk alone |
 | `tests/meta-test.sh` | host-only: user created in the sandbox survives manifest + restmeta replay |
+| `tests/fs-test.sh` | host-only: every filesystem in the table formats, labels and passes its own read-only check |
+| `tests/diskless-test.sh` | ISO with no store disk: boots promptly (nothing waits for absent hardware) and refuses commit/update/remove |
+| `tests/isohunt-test.sh` | ISO hunt with the by-label shortcut broken: finds the medium past a decoy disk, without probe-by-mounting noise |
 
 ## From nothing
 
 Host deps: build deps from the root README, plus
-`pacman -S --needed grub xorriso mtools e2fsprogs (qemu-base edk2-ovmf)`.
+`pacman -S --needed grub xorriso mtools e2fsprogs (qemu-base edk2-ovmf)`,
+and the progs of whatever store filesystem you pick (`btrfs-progs`,
+`xfsprogs`, `f2fs-tools`): a builtin kernel driver is not a mkfs.
 No root needed anywhere; no squashfs-tools (mksquashfs runs from
 inside the generation). QEMU optional.
 
@@ -68,10 +71,16 @@ qemu-system-x86_64 -accel kvm -m 2G -boot d -cdrom build/nixarch.iso \
 # inside: break things freely; happy? nixgen-commit my-setup
 ```
 
-Boot flow: the initramfs takes the generation named by `nixgen=` from
-the store disk (label NIXSTORE) when it holds it, else from
-`nixstore.squashfs` on the ISO; store visible at `/nixstore`, store-disk
-root at `/nixstoredev`. Networking is baked in (networkd DHCP on `en*`,
+Boot flow: the initramfs is systemd-init (`HOOKS=(base systemd keyboard
+block nixgen)`). `nixgen-store.service` takes the generation named by
+`nixgen=` from the store disk (label NIXSTORE) when it holds it, else
+from `nixstore.squashfs` on the ISO, and stages the tmpfs upper; a
+generator writes the `sysroot.mount` that overlays them, so the root
+filesystem is a unit like any other; `nixgen-bind.service` exposes the
+store at `/nixstore` and the store-disk root at `/nixstoredev` before
+switch-root. A failure anywhere in that chain lands in
+`emergency.target`: a shell with `journalctl` behind it, not a bare
+busybox prompt. Networking is baked in (networkd DHCP on `en*`,
 resolved DNS). Autologin only while root is passwordless (stock state,
 what the headless tests ride on). `passwd root` restores login prompts,
 but the password lives in the tmpfs upper like any write: commit it,
@@ -79,32 +88,39 @@ or the next boot is passwordless autologin again.
 
 ## Real hardware (UEFI only, Secure Boot off)
 
+Write the ISO to a stick (`dd if=build/nixarch.iso of=/dev/sdX bs=4M
+oflag=direct status=progress`), boot it on the target, shape the system,
+then install what you actually run:
+
 ```
-arch/iso/flashdisk.sh build/archstore /dev/sdX
+nixgen-setup /dev/nvme0n1 my-install --fs btrfs
 ```
 
-Or install from a running box: boot any nixarch medium on the target
-machine, shape the system, then `nixgen-setup /dev/nvmeXn1`: you
-install what you actually run, not a pre-built image.
+GPT (ESP + NIXSTORE), a standalone GRUB whose whole job is sourcing
+`entries.cfg` from the store partition, and a first generation committed
+from the running root. It refuses to run until the device path is typed
+back; everything on the target is lost. `--fs` picks the store
+filesystem; run it with no arguments to list them.
 
-One command: sizes the image to the disk, builds it, writes it, fscks
-both partitions. It refuses to run until the device path is typed back;
-everything on the disk is lost. ~6 minutes, most of it the silent
-mkbootdisk assembly (mkfs + hole-scanning dd).
-
-What it does under the hood, for doing it manually: GPT+ESP (first
-66MiB) written in full: a sparse write would leave the previous flash's
-FAT metadata under the holes. Store partition written `conv=sparse`:
-its metadata is all real bytes in the image, and `fsck.ext4 -fn`
-afterwards proves the result. Never plain `conv=sparse` for the whole
-disk on a previously-used target.
+Dry-run the whole thing first: `arch/uefi-vm.sh` (argless) boots the ISO
+with a single blank disk at `/dev/vda`, exactly the shape of the real
+thing, and `arch/uefi-vm.sh boot` starts the result alone afterwards.
+The store disk is never attached on that path: an installed target has
+its own NIXSTORE partition, and two of them makes GRUB's label search
+ambiguous.
 
 ## Gotchas
 
 - **Reruns of mkiso.sh reuse the nixarch generations** and only
   reassemble the ISO. `REBUILD=1` discards them first; required after
-  changing setup-boot.sh or the initcpio hook. After any ISO rebuild,
-  restart QEMU: a live VM's GRUB menu points at pre-rebuild hashes.
+  changing setup-boot.sh or any `arch/iso/initcpio-*` file. After any ISO
+  rebuild, restart QEMU: a live VM's GRUB menu points at pre-rebuild
+  hashes.
+- **Boot entries carry `rd.systemd.gpt_auto=0`.** Root comes from
+  `nixgen=`, so systemd-gpt-auto-generator must not go hunting for a
+  root partition and race the generated `sysroot.mount`. Entries written
+  by commit/update/adopt inherit it from `/proc/cmdline`; hand-written
+  ones need it too.
 - **Uncommitted writes live in RAM and vanish**: overlay upper is a
   tmpfs (75% of RAM), no swap. A big enough pacman transaction (~1 GiB
   of downloads+extract) dies with `Write failed` in a 2G box. Big
@@ -125,16 +141,13 @@ disk on a previously-used target.
   captured whole (tests/meta-test.sh pins this).
 - **Diskless BIOS boots pay ~10s** of GRUB probing for the absent
   NIXSTORE label. Known cost, attached-disk boots don't pay it.
-- **Sparse flashing trusts skipped regions to read zero.** On a
-  previously-used disk they don't: the ESP (mostly zeros) inherits the
-  old flash's FAT metadata. flashdisk.sh writes the first 66MiB in
-  full and verifies both filesystems; stale bytes in ext4 *data*
-  blocks stay harmless (never read before written).
 - **USB store disks enumerate late.** `udevadm settle` doesn't wait
   for undiscovered hardware, so disk-only boots on usb lost a ~5s
   race and fell into the ISO hunt (`wrong fs type` spam, no
-  recovery). Disk-boot GRUB entries carry `nixsource=disk`, which
-  makes the initramfs wait (up to 30s) for the store disk instead.
+  recovery). Disk-boot GRUB entries carry `nixsource=disk`, which makes
+  `nixgen-store.service` `udevadm wait` (up to 30s) for the store disk
+  instead: it returns the moment udev has the device, and covers
+  hardware that has not been discovered yet.
   Virtio enumerates instantly: a VM PASS does not cover this path.
 - **update-test.sh pins a dated Arch Archive snapshot** to prove a real
   kernel version change; archive use lives in the test only, stock

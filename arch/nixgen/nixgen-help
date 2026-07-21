@@ -69,12 +69,15 @@ COMMANDS
               nixgen-commit appends). Refuses paths without a
               kernel+initramfs and duplicate entries.
 
-       nixgen-setup <device> [name]
+       nixgen-setup <device> [name] [--fs <type>]
               Install onto a disk from inside the box: GPT (ESP +
               NIXSTORE), standalone GRUB, fresh store seeded with a
-              commit of the running root (mkbootdisk's layout, built
-              live). Deps (grub, dosfstools) install on demand into
-              the ephemeral upper: needs network, gone at reboot.
+              commit of the running root. --fs picks the store filesystem (ext4 default,
+              also btrfs, xfs, f2fs); run without arguments to list
+              them. GRUB has to read the store to load a generation's
+              kernel, which is what limits the choice. Deps (grub,
+              dosfstools, the filesystem's own progs) install on demand
+              into the ephemeral upper: needs network, gone at reboot.
               UEFI only; unplug a NIXSTORE-labeled installer stick
               before first boot (GRUB searches by label).
 

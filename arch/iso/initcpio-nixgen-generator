@@ -1,0 +1,53 @@
+#!/usr/bin/ash
+# systemd system generator: turns nixgen=<store path basename> on the
+# kernel cmdline into the mount unit that makes that generation the root
+# filesystem (immutable store lower + tmpfs upper, overlay on /sysroot).
+# The busybox hook did this with a mount_handler; under a systemd initrd
+# the root mount is a unit, so the selector has to be generated.
+#
+# Writes to the early generator dir ($2): it outranks the normal dir, so
+# a sysroot.mount from systemd-gpt-auto-generator cannot win over this
+# one. Boots with no nixgen= are left completely alone.
+DEST=${2:-$1}
+[ -n "$DEST" ] || exit 1
+[ -e /etc/initrd-release ] || exit 0
+
+for w in $(cat /proc/cmdline); do
+	case $w in
+	nixgen=*) gen=${w#nixgen=} ;;
+	esac
+done
+[ -n "$gen" ] || exit 0
+
+mkdir -p "$DEST/initrd-root-fs.target.requires" \
+	"$DEST/initrd-fs.target.requires"
+
+# lowerdir and the upper both come from nixgen-store.service, which
+# Wants= pulls in and After= orders. Not Requires=: that edge also
+# propagates deactivation, so the stager being stopped during the
+# switch-root cleanup would unmount the root filesystem with it
+cat > "$DEST/sysroot.mount" <<EOF
+[Unit]
+Description=nixgen generation $gen as the root filesystem
+DefaultDependencies=no
+Wants=nixgen-store.service
+After=nixgen-store.service
+Before=initrd-root-fs.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Mount]
+What=overlay
+Where=/sysroot
+Type=overlay
+Options=lowerdir=/run/nixstore/$gen,upperdir=/run/cow/upper,workdir=/run/cow/work
+EOF
+ln -sf ../sysroot.mount \
+	"$DEST/initrd-root-fs.target.requires/sysroot.mount"
+
+# store visible in the booted system: /nixstore and (with a store disk)
+# /nixstoredev. Imperative, not .mount units: a unit with What=/run/...
+# grows an implicit RequiresMountsFor on a mount unit that does not
+# exist until nixgen-store.service has run
+ln -sf ../nixgen-bind.service \
+	"$DEST/initrd-fs.target.requires/nixgen-bind.service"

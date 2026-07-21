@@ -1,0 +1,56 @@
+# Filesystem table for store partitions. Sourced, not run: host scripts
+# take it from the repo, in-box scripts from /usr/local/lib/nixgen-fs.
+# Adding a filesystem is one arm per function here and nothing else.
+#
+# A store filesystem has to hold hardlinks (the .links dedup farm) and
+# real ownership/modes, and GRUB has to read it to load a generation's
+# kernel: that rules out FAT and friends, not much else. Stores are
+# always created on a real device and populated by import-dir, so
+# nothing here needs a mkfs that can seed an unmounted image.
+NIXGEN_FS_ALL="ext4 btrfs xfs f2fs"
+
+is_supported_fs() {
+	case " $NIXGEN_FS_ALL " in
+	*" $1 "*) return 0 ;;
+	esac
+	echo "unknown filesystem '$1' (known: $NIXGEN_FS_ALL)" >&2
+	return 1
+}
+
+# package carrying mkfs/fsck for the filesystem; nixgen-setup installs
+# it on demand so the deps stay out of every generation
+fs_pkg() {
+	case $1 in
+	ext4) echo e2fsprogs ;;
+	btrfs) echo btrfs-progs ;;
+	xfs) echo xfsprogs ;;
+	f2fs) echo f2fs-tools ;;
+	esac
+}
+
+# empty filesystem on a device or image file
+# usage: fs_mkfs <fs> <target> <label>
+fs_mkfs() {
+	case $1 in
+	ext4) mkfs.ext4 -qF -L "$3" "$2" ;;
+	btrfs) mkfs.btrfs -qf -L "$3" "$2" ;;
+	xfs) mkfs.xfs -qf -L "$3" "$2" ;;
+	f2fs) mkfs.f2fs -qf -l "$3" "$2" ;;
+	esac
+}
+
+# read-only consistency check: verifying a store disk without touching it
+# usage: fs_check <fs> <device>
+fs_check() {
+	case $1 in
+	ext4) fsck.ext4 -fn "$2" ;;
+	btrfs) btrfs check --readonly "$2" ;;
+	xfs) xfs_repair -n "$2" ;;
+	f2fs) fsck.f2fs --dry-run "$2" ;;
+	esac
+}
+
+# filesystem of a device that already carries one; empty when unknown
+fs_of_device() {
+	blkid -s TYPE -o value "$1" 2>/dev/null
+}

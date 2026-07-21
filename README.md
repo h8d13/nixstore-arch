@@ -33,7 +33,11 @@ generation offline, rollback is booting an older GRUB entry.
 
 ### From releases: [ISO](https://github.com/h8d13/archinix/releases)
 
-Currently GRUB/Ext4 only.
+**GRUB only**, since it has to read the store to load a generation's
+kernel. Store filesystem is ext4 by default, with btrfs, xfs and f2fs
+in the table ([`arch/nixgen/nixgen-fs`](arch/nixgen/nixgen-fs)):
+`nixgen-setup /dev/disk --fs btrfs`, or a fourth argument to the image
+builders.
 
 `nixgen-setup /dev/disk` installs current running generation to a hard disk.
 > [!NOTE]
@@ -49,8 +53,9 @@ Then, in the box: `nixgen-{commit,update,switch,remove,listid,diffid,setup}`;
 ./build.sh                                       # store libs into build/prefix
 arch/bootstrap.sh build/archstore                # base generation (prints <base>)
 arch/iso/mkiso.sh build/archstore <base>         # bootable ISO
-arch/uefi-vm.sh iso                              # try it in QEMU (UEFI)
-arch/iso/flashdisk.sh build/archstore /dev/sdX   # flash to hardware
+arch/uefi-vm.sh                                  # QEMU (UEFI): ISO + one blank disk
+#   in the box: nixgen-setup /dev/vda my-install [--fs btrfs]
+arch/uefi-vm.sh boot                             # boot what you installed
 ```
 
 Examples of post scripts: https://github.com/h8d13/nixarch.cfg

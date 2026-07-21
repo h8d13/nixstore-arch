@@ -2,16 +2,45 @@
 # Install the running system onto a disk, from inside the box: GPT
 # (ESP + NIXSTORE ext4), standalone UEFI GRUB that only sources
 # entries.cfg from the store partition, fresh store seeded with a
-# commit of the running root. mkbootdisk's layout, built live: shape
-# the system first, install what you actually run. Firmware boots the
+# commit of the running root: shape the system first, install what you
+# actually run. Firmware boots the
 # removable path (EFI/BOOT/BOOTX64.EFI), no NVRAM entry needed.
 # UEFI only, Secure Boot off. Everything on the target is lost; the
 # device path must be typed back. GRUB finds the store by label: if
 # the installer medium is itself a NIXSTORE disk (flashed stick),
 # unplug it before first boot.
-# usage: nixgen-setup <device> [name]   (name default: nixarch-install)
-DEV=$1 NAME=${2:-nixarch-install}
-[ -b "$DEV" ] || { echo "usage: $0 <device> [name]" >&2; exit 1; }
+# usage: nixgen-setup <device> [name] [--fs <type>]
+#        name default nixarch-install, fs default ext4 (nixgen-fs holds
+#        the filesystem table; GRUB has to be able to read the store, so
+#        the choice is between the journalling/CoW ones, not FAT)
+. /usr/local/lib/nixgen-fs
+
+DEV= NAME= FS=ext4
+while [ $# -gt 0 ]; do
+	case $1 in
+	--fs) FS=$2; shift 2 ;;
+	--fs=*) FS=${1#--fs=}; shift ;;
+	-*) echo "unknown option: $1" >&2; exit 1 ;;
+	*)
+		if [ -z "$DEV" ]; then DEV=$1; else NAME=$1; fi
+		shift
+		;;
+	esac
+done
+NAME=${NAME:-nixarch-install}
+# filesystem first: a typo there is worth naming on its own, before the
+# device check turns it into a usage dump
+is_supported_fs "$FS" || exit 1
+[ -b "$DEV" ] || {
+	# the list comes from the table, so a filesystem added there shows
+	# up here without touching this script
+	echo "usage: $0 <device> [name] [--fs <type>]" >&2
+	echo "  <type>: $(echo "$NIXGEN_FS_ALL" | tr ' ' '|') (default ext4)" >&2
+	for f in $NIXGEN_FS_ALL; do
+		printf '  %-6s mkfs from %s\n' "$f" "$(fs_pkg "$f")" >&2
+	done
+	exit 1
+}
 case $DEV in
 *[0-9]) PART="${DEV}p" ;;
 *) PART="$DEV" ;;
@@ -34,7 +63,7 @@ read -r reply
 # running snapshot, no partial upgrade (-Sy <pkg> is never right). A
 # stale generation's versions may be gone from live mirrors; the
 # consistent way forward is a full update, not a db refresh here
-pacman -S --needed --noconfirm grub dosfstools || {
+pacman -S --needed --noconfirm grub dosfstools "$(fs_pkg "$FS")" || {
 	echo "setup: dep install failed (stale generation?);" \
 		"nixgen-update + reboot, then retry" >&2
 	exit 1
@@ -47,7 +76,7 @@ start=65MiB, type=linux
 EOF
 udevadm settle --timeout=10
 mkfs.fat -F 32 -n NIXBOOT "${PART}1"
-mkfs.ext4 -q -L NIXSTORE "${PART}2"
+fs_mkfs "$FS" "${PART}2" NIXSTORE
 
 T=$(mktemp -d /run/nixgen-setup.XXXXXX)
 cleanup() {
@@ -61,8 +90,8 @@ cleanup() {
 trap cleanup EXIT
 mkdir "$T/esp" "$T/store"
 
-# same embedded config mkbootdisk.sh ships: GRUB's whole job is
-# finding the store partition and deferring to its entries.cfg
+# GRUB's whole job is finding the store partition and deferring to its
+# entries.cfg, which commit/update/adopt append to
 cat > "$T/embed.cfg" <<EOF
 set default=0
 set timeout=5

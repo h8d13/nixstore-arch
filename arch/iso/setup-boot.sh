@@ -7,7 +7,17 @@
 I=/run/inject
 
 install -Dm644 "$I/initcpio-install-nixgen" /etc/initcpio/install/nixgen
-install -Dm644 "$I/initcpio-hook-nixgen" /etc/initcpio/hooks/nixgen
+# runtime pieces of the hook: no /etc/initcpio/hooks/nixgen, a systemd
+# initrd has no mount_handler to install. The build hook copies these
+# into the image as units, a generator and two scripts
+install -Dm755 "$I/initcpio-nixgen-store" /etc/initcpio/nixgen/nixgen-store
+install -Dm755 "$I/initcpio-nixgen-bind" /etc/initcpio/nixgen/nixgen-bind
+install -Dm755 "$I/initcpio-nixgen-generator" \
+	/etc/initcpio/nixgen/nixgen-generator
+install -Dm644 "$I/initcpio-nixgen-store.service" \
+	/etc/initcpio/nixgen/nixgen-store.service
+install -Dm644 "$I/initcpio-nixgen-bind.service" \
+	/etc/initcpio/nixgen/nixgen-bind.service
 # conf.d drop-in, not /etc/mkinitcpio.conf: pacman owns that file and
 # pre-placing it yields a .pacnew warning at kernel install
 install -Dm644 "$I/mkinitcpio.conf" /etc/mkinitcpio.conf.d/nixgen.conf
@@ -87,6 +97,9 @@ install -m755 "$I/nixgen-adopt" /usr/local/bin/nixgen-adopt
 install -m755 "$I/nixgen-help" /usr/local/bin/nixgen-help
 install -m755 "$I/nixgen-savemeta" /usr/local/bin/nixgen-savemeta
 install -m755 "$I/nixgen-restmeta" /usr/local/bin/nixgen-restmeta
+# sourced table, not a command: /usr/local/lib keeps it out of the
+# nixgen-* command surface (nixgen-help drift check globs bin/)
+install -Dm644 "$I/nixgen-fs" /usr/local/lib/nixgen-fs
 
 # store import canonicalises permissions (dirs 0555, no setuid/sticky/
 # ownership/caps); replay the captured manifest before anything else

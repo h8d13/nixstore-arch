@@ -57,8 +57,7 @@ done
 	mkdir "$TMP/inject"
 	cp "$REPO"/arch/nixgen/nixgen-* "$TMP/inject/"
 	cp "$REPO/arch/iso/setup-boot.sh" "$REPO/arch/iso/mkinitcpio.conf" \
-		"$REPO/arch/iso/initcpio-hook-nixgen" \
-		"$REPO/arch/iso/initcpio-install-nixgen" "$TMP/inject/"
+		"$REPO"/arch/iso/initcpio-* "$TMP/inject/"
 	mkdir "$TMP/inject/payload"
 	cp "$REPO/build/import-dir" "$REPO/build/rm-path" \
 		"$REPO/build/export-path" "$REPO/build/import-path" \
@@ -94,8 +93,11 @@ cat > "$ISO/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=5
 
+# rd.systemd.gpt_auto=0: the initrd's root comes from nixgen=, so
+# systemd-gpt-auto-generator must not go looking for a root partition of
+# its own and race the generated sysroot.mount
 menuentry "nixarch ISO (read-only): $G1" {
-	linux /boot/vmlinuz-linux nixgen=$G1 nixlabel=$LABEL console=ttyS0,115200 console=tty0
+	linux /boot/vmlinuz-linux nixgen=$G1 nixlabel=$LABEL rd.systemd.gpt_auto=0 console=ttyS0,115200 console=tty0
 	initrd /boot/initramfs-linux.img
 }
 

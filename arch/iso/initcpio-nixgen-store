@@ -1,0 +1,116 @@
+#!/usr/bin/ash
+# Stage the store for the generation named by nixgen=: find whichever
+# medium carries it, mount it at /run/nixstore, and put a tmpfs upper at
+# /run/cow. The overlay itself is a unit (sysroot.mount, written by
+# nixgen-generator); this script only produces what that unit consumes.
+#
+# Store source, per generation: a writable store disk (label NIXSTORE,
+# any filesystem; nixgen-commit populates it from inside the box) if it
+# holds the requested generation, else read-only nixstore.squashfs from
+# the boot medium (label NIXISO).
+#
+# Kernel cmdline: nixgen=<store path basename>
+#                 [nixlabel=<iso label>] [nixstorelabel=<disk label>]
+#                 [nixsource=disk]
+# Failure exits non-zero: the unit's OnFailure drops to emergency.target,
+# which is a real shell with the journal behind it.
+msg() { echo ":: nixgen: $*"; }
+die() { echo "nixgen: $*" >&2; exit 1; }
+
+for w in $(cat /proc/cmdline); do
+	case $w in
+	nixgen=*) gen=${w#nixgen=} ;;
+	nixlabel=*) label=${w#nixlabel=} ;;
+	nixstorelabel=*) storelabel=${w#nixstorelabel=} ;;
+	nixsource=*) source=${w#nixsource=} ;;
+	esac
+done
+: "${label:=NIXISO}" "${storelabel:=NIXSTORE}"
+[ -n "$gen" ] || die "no nixgen= on the kernel cmdline"
+
+mkdir -p /run/nixiso /run/nixstore /run/nixstoredev /run/cow
+
+# mount the first candidate that actually carries the store; checking
+# for the squashfs beats trusting device names. blkid gates the probe:
+# only iso9660 devices get a mount attempt, so a mediumless sr0, the
+# store disk and foreign disks never print mount errors on the boot
+# console (probe-by-failing was the old behavior; the util-linux
+# fsconfig mount reports each miss loudly)
+mount_iso() {
+	for d in "/dev/disk/by-label/$label" /dev/sr0 /dev/sr1 \
+			/dev/vda /dev/vdb /dev/sda /dev/sdb; do
+		[ -b "$d" ] || continue
+		case "$(blkid "$d" 2>/dev/null)" in
+		*'TYPE="iso9660"'*) ;;
+		*) continue ;;
+		esac
+		mount -r -t iso9660 "$d" /run/nixiso || continue
+		[ -f /run/nixiso/nixstore.squashfs ] && return 0
+		umount /run/nixiso
+	done
+	return 1
+}
+
+# Two different questions, two different tools. "Is the already-present
+# hardware done being processed?" is settle, and it is what an ISO boot
+# asks. "Will this device show up at all?" is `udevadm wait`, which also
+# covers hardware not discovered yet (the old poll_device loop), and
+# only nixsource=disk boots need it: there root is on the store disk,
+# no ISO exists, and the hunt below cannot recover a slow (usb) disk
+storedev="/dev/disk/by-label/$storelabel"
+if [ "$source" = disk ]; then
+	msg "waiting for store disk $storedev"
+	udevadm wait --timeout=30 --initialized=yes "$storedev" \
+		|| msg "$storedev did not appear in 30s"
+else
+	# settle, never wait: settle drains the queue for hardware that
+	# exists and returns at once, so an ISO boot with no store disk
+	# pays ~0s. `udevadm wait` on an absent device burns its whole
+	# timeout, every boot
+	udevadm settle --timeout=5
+fi
+if [ -b "$storedev" ] && mount "$storedev" /run/nixstoredev; then
+	msg "writable store on $storedev"
+fi
+
+if [ -d "/run/nixstoredev/nix/store/$gen" ]; then
+	mount -o bind /run/nixstoredev/nix/store /run/nixstore
+else
+	# no wait on the label: settle already covers a medium that is
+	# present, and a boot medium whose label differs (a stick flashed
+	# under another name) would otherwise pay the timeout before the
+	# hunt below, which is the thing that actually finds it. The retry
+	# loop is the recovery window for slow media
+	tries=0
+	while ! mount_iso; do
+		tries=$((tries + 1))
+		[ "$tries" -lt 20 ] || die "no device carries nixstore.squashfs"
+		sleep 1
+	done
+	if ! mount -r -t squashfs -o loop \
+			/run/nixiso/nixstore.squashfs /run/nixstore; then
+		loopdev=$(losetup -f)
+		losetup -r "$loopdev" /run/nixiso/nixstore.squashfs
+		mount -r -t squashfs "$loopdev" /run/nixstore
+	fi
+fi
+
+if [ ! -d "/run/nixstore/$gen" ] && ! mountpoint -q /run/nixstoredev; then
+	# committed generations exist only on the store disk; now that it's
+	# known to be required, give a slow one (usb) a second chance
+	if udevadm wait --timeout=10 --initialized=yes "$storedev" \
+			&& mount "$storedev" /run/nixstoredev \
+			&& [ -d "/run/nixstoredev/nix/store/$gen" ]; then
+		umount /run/nixstore || :
+		mount -o bind /run/nixstoredev/nix/store /run/nixstore
+	fi
+fi
+[ -d "/run/nixstore/$gen" ] || {
+	ls /run/nixstore
+	die "generation '$gen' not in store"
+}
+
+# writes go to RAM and vanish on shutdown; the store path stays
+# immutable. sysroot.mount overlays this upper onto the generation
+mount -t tmpfs -o size=75%,mode=0755 cow /run/cow
+mkdir -p /run/cow/upper /run/cow/work

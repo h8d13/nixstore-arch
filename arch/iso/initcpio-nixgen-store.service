@@ -1,0 +1,31 @@
+[Unit]
+Description=Stage the nixgen store and overlay upper
+Documentation=man:mkinitcpio(8)
+DefaultDependencies=no
+AssertPathExists=/etc/initrd-release
+# Wants=, never Requires=: udevd is torn down on purpose as part of the
+# switch-root transaction (initrd-udevadm-cleanup-db.service conflicts
+# with it), and Requires= propagates that deactivation to this unit and
+# on to whatever depends on it. That path unmounts /sysroot moments
+# before switch-root uses it
+Wants=systemd-udevd.service
+Wants=systemd-udev-trigger.service
+# nothing in the initrd should tear the staged store down; the isolate
+# to initrd-switch-root.target would otherwise stop this unit
+IgnoreOnIsolate=yes
+After=systemd-udevd.service systemd-udev-trigger.service
+After=systemd-modules-load.service initrd-root-device.target
+Before=sysroot.mount initrd-root-fs.target
+Conflicts=shutdown.target
+Before=shutdown.target
+OnFailure=emergency.target
+OnFailureJobMode=replace-irreversibly
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nixgen-store
+# the store hunt is the boot: its progress belongs on the console, not
+# only in a journal that a failed boot never gets to show
+StandardOutput=journal+console
+StandardError=journal+console

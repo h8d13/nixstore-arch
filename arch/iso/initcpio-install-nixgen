@@ -6,24 +6,58 @@ build() {
 	add_module iso9660
 	add_module sr_mod
 	add_module cdrom
-	# mkinitcpio's udev hook ships persistent-storage rules but not
-	# cdrom_id; without it udev never probes CD media, so
-	# /dev/disk/by-label/* never appears for optical/ISO devices
+	# store filesystems: ext4 and btrfs are compiled into the Arch
+	# kernel, xfs and f2fs are modules and the image has no autodetect
+	# to find them. '?' keeps a kernel that builtins any of these from
+	# failing the build
+	add_module 'xfs?'
+	add_module 'f2fs?'
+	# the systemd hook ships persistent-storage rules but not cdrom_id;
+	# without it udev never probes CD media, so /dev/disk/by-label/*
+	# never appears for optical/ISO devices
 	add_binary /usr/lib/udev/cdrom_id
 	add_file /usr/lib/udev/rules.d/60-cdrom_id.rules
-	add_runscript
+	# udevadm arrives with systemd-udev-trigger.service anyway; named
+	# here because nixgen-store calls `udevadm wait` directly
+	add_binary /usr/bin/udevadm
+	add_binary /usr/bin/losetup
+
+	# runtime: a generator turns nixgen= into sysroot.mount, one service
+	# stages what that mount consumes, one binds the store into the new
+	# root. Under a systemd initrd there is no mount_handler to hook
+	add_file /etc/initcpio/nixgen/nixgen-store /usr/bin/nixgen-store 755
+	add_file /etc/initcpio/nixgen/nixgen-bind /usr/bin/nixgen-bind 755
+	add_file /etc/initcpio/nixgen/nixgen-generator \
+		/usr/lib/systemd/system-generators/nixgen-generator 755
+	add_file /etc/initcpio/nixgen/nixgen-store.service \
+		/usr/lib/systemd/system/nixgen-store.service 644
+	add_file /etc/initcpio/nixgen/nixgen-bind.service \
+		/usr/lib/systemd/system/nixgen-bind.service 644
+	# systemd would create the mountpoint itself; having it in the image
+	# keeps sysroot.mount from being the thing that discovers a
+	# read-only rootfs
+	add_dir /sysroot
+	# emergency.target is the failure path now, and the systemd hook's
+	# locked root makes it a dead end ("Cannot open access to console,
+	# the root account is locked"). Passwordless is the booted system's
+	# own stock state; this shadow exists only inside the initramfs.
+	# Runs after the systemd hook (nixgen is last in HOOKS), so it wins
+	printf 'root::::::::\n' | add_file - /etc/shadow 0400
 }
 
 help() {
 	cat <<HELPEOF
-Boots a nixstore generation as the root filesystem: waits for the boot
-medium by label, mounts the squashed store from it, overlay-mounts the
-generation named by nixgen= with a tmpfs upper layer, then hands the
-merged tree to switch_root. Writes go to RAM and vanish on shutdown;
-the store path itself is immutable.
+Boots a nixstore generation as the root filesystem. Requires the systemd
+hook: nixgen-store.service waits for the boot medium by label, mounts the
+squashed store from it (or binds the store disk when it holds the
+generation) and stages a tmpfs upper; a generator writes the sysroot.mount
+that overlays them; nixgen-bind.service exposes the store in the new root.
+Writes go to RAM and vanish on shutdown; the store path stays immutable.
 
 Kernel cmdline:
   nixgen=<store path basename>   which generation to boot (required)
   nixlabel=<iso volume label>    boot medium label (default NIXISO)
+  nixstorelabel=<disk label>     store disk label (default NIXSTORE)
+  nixsource=disk                 no ISO exists, wait for the store disk
 HELPEOF
 }
