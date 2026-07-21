@@ -34,8 +34,7 @@ generation offline, rollback is booting an older GRUB entry.
 
 ### From releases: [ISO](https://github.com/h8d13/archinix/releases)
 
-**GRUB only**. Store filesystem is `ext4` by default, with `btrfs`, `xfs` and `f2fs`
-in the table ([`arch/nixgen/nixgen-fs`](arch/nixgen/nixgen-fs))
+**GRUB only**. Store filesystem is `ext4` by default, with `btrfs`, `xfs` and `f2fs`([`arch/nixgen/nixgen-fs`](arch/nixgen/nixgen-fs))
 
 `nixgen-setup /dev/disk --fs xfs` installs current running generation to a hard disk.
 
