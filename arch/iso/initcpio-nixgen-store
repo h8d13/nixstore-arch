@@ -51,23 +51,20 @@ mount_iso() {
 	return 1
 }
 
-# Two different questions, two different tools. "Is the already-present
-# hardware done being processed?" is settle, and it is what an ISO boot
-# asks. "Will this device show up at all?" is `udevadm wait`, which also
-# covers hardware not discovered yet (the old poll_device loop), and
-# only nixsource=disk boots need it: there root is on the store disk,
-# no ISO exists, and the hunt below cannot recover a slow (usb) disk
+# Two different questions, two different tools. settle asks "is the
+# already-present hardware done being processed?" and every boot asks
+# it: it returns as soon as the queue drains and never waits on absent
+# hardware. `udevadm wait` asks "will this device show up at all?"
+# (the old poll_device loop), which is only worth paying when the
+# device is still missing and nixsource=disk says it must exist: there
+# root is on the store disk, no ISO exists, and the hunt below cannot
+# recover a slow (usb) disk
 storedev="/dev/disk/by-label/$storelabel"
-if [ "$source" = disk ]; then
+udevadm settle --timeout=5
+if [ "$source" = disk ] && [ ! -b "$storedev" ]; then
 	msg "waiting for store disk $storedev"
 	udevadm wait --timeout=30 --initialized=yes "$storedev" \
 		|| msg "$storedev did not appear in 30s"
-else
-	# settle, never wait: settle drains the queue for hardware that
-	# exists and returns at once, so an ISO boot with no store disk
-	# pays ~0s. `udevadm wait` on an absent device burns its whole
-	# timeout, every boot
-	udevadm settle --timeout=5
 fi
 if [ -b "$storedev" ] && mount "$storedev" /run/nixstoredev; then
 	msg "writable store on $storedev"
