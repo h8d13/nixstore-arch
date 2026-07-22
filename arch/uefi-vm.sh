@@ -33,6 +33,11 @@
 #                       + qemu-ui-opengl
 #   AUDIO_BACKEND       qemu -audiodev value ('none' default; 'pipewire',
 #                       'pa', 'alsa' each need the matching qemu-audio-* pkg)
+#   SERIAL              'on' runs headless with serial console + monitor
+#                       muxed on this terminal (autologin getty lands
+#                       here). Ctrl-A c toggles console/monitor, Ctrl-A x
+#                       quits. GRUB menu stays on the (absent) VGA:
+#                       default entry boots after the timeout
 
 
 set -euo pipefail
@@ -51,6 +56,7 @@ GL="${GL:-off}"
 # nixarch ships no audio stack; sound is opt-in so the VM does not need
 # a qemu-audio-* package to start
 AUDIO_BACKEND="${AUDIO_BACKEND:-none}"
+SERIAL="${SERIAL:-off}"
 ARG="${1:-fresh}"
 
 err() {
@@ -146,6 +152,14 @@ fi
 ACCEL=()
 [ -w /dev/kvm ] && ACCEL=(-enable-kvm -cpu host)
 
+# stdio carries either the monitor (default) or the muxed serial
+# console (SERIAL=on): both on stdio would collide
+MON_ARGS=(-monitor stdio)
+if [ "$SERIAL" = "on" ]; then
+	VIDEO_ARGS=(-display none)
+	MON_ARGS=(-serial mon:stdio)
+fi
+
 QEMU_ARGS=(
 	-machine q35
 	"${ACCEL[@]}"
@@ -154,7 +168,7 @@ QEMU_ARGS=(
 	-device virtio-net-pci,netdev=net0
 	-netdev user,id=net0
 	"${VIDEO_ARGS[@]}"
-	-monitor stdio
+	"${MON_ARGS[@]}"
 	-drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE"
 	-drive "if=pflash,format=raw,file=$VARS"
 )
