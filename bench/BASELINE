@@ -51,6 +51,22 @@ of seconds on a stick. That is media, not code: to measure a box,
 run with the work dir on the target medium:
   bench/run-real.sh <tree> /path/on/that/medium
 
+## COLD=1 bench/run-real.sh   (page cache evicted before each import)
+
+fresh install    1.9 s   (warm 0.9)
+update, all dups 1.7 s   (warm 0.9)
+package update   2.4 s   (warm 1.1)
+
+Cache temperature moves more than any code change in this file: ~2x
+on NVMe, and the gap scales with the medium's random-read cost. This
+is the realistic commit shape (the box commits hours after boot, not
+seconds after building the tree); the default warm numbers isolate
+code changes, COLD=1 approximates the user experience. fadvise only
+evicts data pages (dentries/inodes need root), so true after-boot
+cold is somewhat worse than COLD=1 measures. Streamed dedup still
+avoids the writes when content matches; what cold adds is re-reading
+the source and the store db/farm metadata.
+
 ## bench/run.sh (defaults: 200 500 5000, quick smoke)
 
 populate (addToStore)     1.087 s
@@ -105,6 +121,11 @@ Follow-ups tried, with verdicts (measure, then promote or discard):
   remaining futexes are AsyncFileHasher's per-file metadata events
   (~4 per file), not data chunks. Batching those events is the one
   real cut left on the futex side, if it is ever worth the churn.
+  Re-swept after the canonical restore landed: 8K/32K/256K measure
+  463k/446k/446k futex and identical wall, so above the 32 KiB
+  default the curve is flat and the knob is settled, not just
+  discarded. Alignment is a non-factor throughout: no O_DIRECT, and
+  the hashers take unaligned input.
 
 - PROMOTED: canonical restore (upstream's own FIXME at the old
   canonicalise call site: "merge into restorePath"). RestoreSink in
@@ -145,6 +166,15 @@ Follow-ups tried, with verdicts (measure, then promote or discard):
   flip it (cold farm directory on USB-class flash vs cache-hot
   lstats) needs a real box to measure; on syscall count it loses
   everywhere.
+
+- DISCARDED: -march=native (measured, not just reasoned). Three runs
+  each: 1480-1496 ms task-clock native vs 1467-1502 generic, synth
+  populate 0.886 vs 0.883 s. The hot loops never see compile flags:
+  SHA-256 (libcrypto), BLAKE3 and glibc memcpy all dispatch SHA-NI/
+  AVX2 by CPUID at runtime, half the time is kernel-side anyway, and
+  native-built payload binaries would SIGILL on older boxes the ISO
+  boots. If a CPU floor is ever wanted, -march=x86-64-v3 is the
+  shippable form of the same idea; expect the same nothing.
 
 Still open, measured: ~75k target-store stats remain (optimise walk +
 farm probes); optimise with capture is 0.2 s and parallel, so the

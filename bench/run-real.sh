@@ -14,7 +14,11 @@
 # reads through the links.
 # Run with the work dir on the target media to measure that media:
 #   bench/run-real.sh <tree> /mnt/usb/benchwork
-# usage: bench/run-real.sh [tree] [work-dir]     env: NEWMB
+# COLD=1 evicts the tree's and store's data pages (bench/evict-cache.py)
+# before each timed import instead of prewarming: the box's real commit
+# runs hours after boot, not seconds after building the tree. Cache
+# temperature outweighs code: the warm/cold gap measured 2.1x on NVMe.
+# usage: bench/run-real.sh [tree] [work-dir]     env: NEWMB, COLD
 #        tree default: sole *-arch-base in build/archstore
 cd "$(dirname "$0")/.."
 REPO=$PWD
@@ -51,8 +55,18 @@ echo "media: $(df --output=source,fstype "$WORKPARENT" | tail -1)"
 echo "tree:  $TREE ($(du -sh "$TREE" | cut -f1), $(find "$TREE" | wc -l) entries)"
 # warm the page cache once so capture off/on see the same conditions;
 # on repeat-import phases the tree is hot either way, like on a box
-# where the generation was just built in the overlay
-echo "prewarm: $(tar -cf - -C "$TREE" . | wc -c) bytes read"
+# where the generation was just built in the overlay. COLD=1 inverts
+# this: evict instead, before every timed import
+chill() {
+	[ -n "$COLD" ] || return 0
+	sync
+	python3 bench/evict-cache.py "$@" 2>&1
+}
+if [ -n "$COLD" ]; then
+	chill "$TREE"
+else
+	echo "prewarm: $(tar -cf - -C "$TREE" . | wc -c) bytes read"
+fi
 
 echo
 echo "--- capture off/on, fresh store each (cold farm)"
@@ -60,6 +74,7 @@ LD_LIBRARY_PATH=$P/lib build/bench-import "$WORK/ab" --tree "$TREE"
 
 echo
 echo "--- fresh install: import-dir into empty store"
+chill "$TREE"
 T0=$(date +%s.%N)
 LD_LIBRARY_PATH=$P/lib build/import-dir "$WORK/store" gen-base "$TREE"
 T1=$(date +%s.%N)
@@ -77,6 +92,7 @@ if ! cp -al "$TREE" "$WORK/variant" 2> "$WORK/cp-al.err"; then
 fi
 chmod u+w "$WORK/variant"
 echo "bench-variant $(date +%s)" > "$WORK/variant/.bench-variant"
+chill "$WORK/variant" "$WORK/store"
 T0=$(date +%s.%N)
 LD_LIBRARY_PATH=$P/lib build/import-dir "$WORK/store" gen-next "$WORK/variant"
 T1=$(date +%s.%N)
@@ -106,6 +122,7 @@ while [ "$i" -lt "$NBIG" ]; do
 	i=$((i + 1))
 done
 echo "new: $((NSMALL + NBIG)) files, $(du -sm "$WORK/variant2/usr/lib/new-pkgs" | cut -f1) MiB"
+chill "$WORK/variant2" "$WORK/store"
 T0=$(date +%s.%N)
 LD_LIBRARY_PATH=$P/lib build/import-dir "$WORK/store" gen-pkgs "$WORK/variant2"
 T1=$(date +%s.%N)

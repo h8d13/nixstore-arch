@@ -30,7 +30,8 @@ BAD=$(find . -xdev \( -path "*${TAB}*" -o -path "*${NL}*" \) -print | wc -l)
 	"savemeta: $BAD tab/newline paths excluded from manifests" >&2
 # ! -perm -444: canonical 0444 makes every file world-readable, so
 # files STRICTER than that (shadow, ssh host keys, 600/640/440) must
-# be captured or import discloses them to non-root users.
+# be captured and replayed on the booted view; the store's own 0444
+# copies sit behind the 0700 store dir (import-dir enforces it).
 # /etc/skel is captured whole: its modes are template data that
 # useradd copies to new users; canonical 444 there means every user
 # starts with a readonly .bashrc
@@ -40,8 +41,13 @@ BAD=$(find . -xdev \( -path "*${TAB}*" -o -path "*${NL}*" \) -print | wc -l)
 # -mindepth 1: the tree root's mode is the builder's upper mkdir (755
 # sandbox, 755 boot tmpfs, 555 iso build): capturing "." makes equal
 # trees produce different manifests depending on who built them
+# nixstore mountpoints excluded: baked dirs sit under a mount on every
+# booted system, so a captured row replays onto the mounted fs; the
+# /nixstore bind IS the store dir inode and the chmod would strip the
+# 0700 gate import-dir put on it
 find . -mindepth 1 -xdev \( -path './tmp/*' -o -path './var/tmp/*' \) -prune \
 	-o ! -path "*${TAB}*" ! -path "*${NL}*" \
+	! -path ./nixstore ! -path ./nixstoredev \
 	\( -type d ! \( -perm 555 -user 0 -group 0 \) \
 	-o -type f \( -perm /7022 -o ! -perm -444 -o ! -user 0 -o ! -group 0 \
 		-o -path ./etc/skel/\* \) \

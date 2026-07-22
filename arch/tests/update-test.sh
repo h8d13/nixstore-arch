@@ -163,6 +163,8 @@ drive "NIXARCH BOOT OK" \
 	"DB_CLEAN" \
 	'echo "shadow=$(stat -c %a /etc/shadow)"' \
 	"shadow=600" \
+	'echo "storemode=$(stat -c %a /nixstoredev/nix/store)-$(stat -c %a /nixstore)"' \
+	"storemode=700-700" \
 	"command -v $(basename $TOOL)" \
 	"$TOOL" \
 	"nixgen-remove $NEWGEN" \
@@ -189,6 +191,8 @@ drive "NIXARCH BOOT OK" \
 	"bashrc=644:1100:1100" \
 	'su - tuser -c "echo mark >> ~/.bashrc"; echo "uwrite=$?"' \
 	"uwrite=0" \
+	'su - tuser -c "ls /nixstore" 2>&1 | grep -q "Permission denied" && echo STORE_"GATED"' \
+	"STORE_GATED" \
 	"nixgen-remove test-sw" \
 	"refusing to remove the running generation" \
 	"nixgen-listid" \

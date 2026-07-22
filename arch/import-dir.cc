@@ -12,10 +12,13 @@
 // <root>/nix/var/nix/gcroots/<basename>, so the store db itself knows
 // generations are alive; rm-path drops the root before deleting.
 // usage: import-dir <store-root> <name> <dir>
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <optional>
+#include <sys/stat.h>
 
 #include <nix/store/globals.hh>
 #include <nix/store/local-store.hh>
@@ -44,6 +47,20 @@ try {
 	auto store = openStore(std::filesystem::absolute(argv[1]));
 	auto local = store.dynamic_pointer_cast<LocalStore>();
 	auto dir = std::filesystem::absolute(argv[3]);
+
+	/* imported trees carry secrets (shadow, ssh host keys) at
+	   canonical 0444, and restmeta re-protects only the booted
+	   overlay view: the store dir inode itself (with the .links
+	   farm inside it) is what /nixstore bind-mounts, so its mode is
+	   the one path-credential gate. Everything legitimate reads the
+	   store as root or offline (GRUB), so close it to everyone
+	   else. Runs on every import: heals stores created before this
+	   gate existed. */
+	if (::chmod(local->config->realStoreDir.get().c_str(), 0700) == -1) {
+		fprintf(stderr, "import-dir: chmod 0700 %s: %s\n",
+			local->config->realStoreDir.get().c_str(), strerror(errno));
+		return 1;
+	}
 
 	auto t0 = std::chrono::steady_clock::now();
 	/* Store::addToStore minus the ceremony, with per-file hash capture

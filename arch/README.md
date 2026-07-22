@@ -9,7 +9,7 @@ kernel (module tree effectively unloaded until reboot). Here an update
 builds the *next* generation offline; the running root is never touched.
 
 It also aims to solve partial updates in a way, since the current gen;
-only lives in RAM and `checkupdates` equivalent is ran before `nixgen-update`
+only lives in RAM and `checkupdates` equivalent is ran before `nixgen-update`.
 
 ![SchemaArchinix](./schema.png)
 
@@ -26,6 +26,10 @@ Inside the box (installed by `setup-boot.sh`):
 All commands: reference is `nixgen-help` (source:
 [nixgen/nixgen-help](nixgen-help), drift-checked by
 update-test: every installed [nixgen-*](./nixgen/) must appear in it).
+
+## Resources
+
+- https://wiki.archlinux.org/title/File_permissions_and_attributes
 
 ## Tools
 
